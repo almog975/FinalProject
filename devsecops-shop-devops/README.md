@@ -76,6 +76,16 @@ curl -s http://shop.local/ready
 curl -s http://shop.local/api/security/sbom | head
 ```
 
+### Shop UI
+
+The React SPA is built into the **API image** and served by Flask at `/` (same Service / Ingress as the API). No separate `shop-web` chart is required. After rebuild + `helm upgrade`, open:
+
+```bash
+minikube service shop -n shop --url
+```
+
+Or `http://shop.local/` when Ingress + `/etc/hosts` are set.
+
 ### Smoke-render without a cluster
 
 ```bash
