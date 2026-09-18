@@ -71,6 +71,7 @@ Map the Ingress host (after install):
 ```bash
 echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
 curl -s http://shop.local/health
+# Or: minikube service shop -n shop --url   # NodePort via values-dev.yaml
 curl -s http://shop.local/ready
 curl -s http://shop.local/api/security/sbom | head
 ```
