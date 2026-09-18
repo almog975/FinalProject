@@ -17,7 +17,7 @@
 | **1** | Flask shop API (products, cart, orders), Docker Compose, health/ready/metrics | [`devsecops-shop-app/`](devsecops-shop-app/) |
 | **2** | SBOM + vulnerability scan-report endpoints (`/api/security/*`), samples + ingest | same app + `samples/` |
 | **3** | Helm chart for Minikube (API + in-chart Postgres), Ingress `shop.local` | [`devsecops-shop-devops/helm/shop`](devsecops-shop-devops/helm/shop) |
-| **4** | Jenkins declarative pipeline with **hard gates** (secrets / Trivy CRITICAL / Checkov HIGH / coverage ≥70%) | [`devsecops-shop-devops/jenkins/`](devsecops-shop-devops/jenkins/) *(PR `#4` until merged)* |
+| **4** | Jenkins declarative pipeline with **hard gates** (secrets / Trivy CRITICAL / Checkov HIGH / coverage ≥70%) | [`devsecops-shop-devops/jenkins/`](devsecops-shop-devops/jenkins/) |
 | **5** | Terraform (local, `enable_cloud=false`) + kube-prometheus-stack / Loki / Grafana dashboard | [`terraform/`](devsecops-shop-devops/terraform/), [`monitoring/`](devsecops-shop-devops/monitoring/) |
 | **6** | Demo runbook + project overview (this README) | [`DEMO.md`](DEMO.md) |
 
@@ -71,7 +71,7 @@ FinalProject/
   scripts/demo.sh                # ordered demo command printer
   devsecops-shop-app/            # Phase 1–2 Flask API
     app/ Dockerfile docker-compose.yml samples/ tests/
-  devsecops-shop-devops/         # Phase 3–5 (+ Phase 4 when merged)
+  devsecops-shop-devops/         # Phase 3–5 (Helm, Jenkins, Terraform, monitoring)
     helm/shop/                   # Minikube chart + values-dev.yaml
     jenkins/                     # Jenkinsfile + helper scripts (Phase 4)
     security/                    # gitleaks / checkov / policies (Phase 4)
@@ -86,10 +86,10 @@ FinalProject/
 
 - **Demo everything:** [`DEMO.md`](DEMO.md) · helper [`scripts/demo.sh`](scripts/demo.sh)
 - **App (1–2):** [`devsecops-shop-app/README.md`](devsecops-shop-app/README.md)
-- **DevOps overview (3 + 5):** [`devsecops-shop-devops/README.md`](devsecops-shop-devops/README.md)
+- **DevOps overview (3–5):** [`devsecops-shop-devops/README.md`](devsecops-shop-devops/README.md)
 - **Terraform:** [`devsecops-shop-devops/terraform/README.md`](devsecops-shop-devops/terraform/README.md)
 - **Monitoring:** [`devsecops-shop-devops/monitoring/README.md`](devsecops-shop-devops/monitoring/README.md)
-- **Hard gates (4):** `devsecops-shop-devops/security/policies/README.md` (on Phase 4 branch / after merge)
+- **Hard gates (4):** [`devsecops-shop-devops/security/policies/README.md`](devsecops-shop-devops/security/policies/README.md)
 
 ### One-liners (see DEMO for full sequences)
 

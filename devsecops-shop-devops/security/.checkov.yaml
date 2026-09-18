@@ -1,0 +1,17 @@
+# Checkov config — Helm chart scan (Phase 4 hard gate: HIGH+)
+# Framework: helm against helm/shop
+compact: true
+framework:
+  - helm
+quiet: false
+# Soft-fail lower severities in CLI flags; hard-fail HIGH/CRITICAL via Jenkins
+skip-check:
+  # Student Minikube chart: no NetworkPolicy / PodSecurity in v1 (documented)
+  - CKV_K8S_21   # default namespace — we deploy to shop ns via helm -n
+  - CKV2_K8S_6   # NetworkPolicy — out of scope Phase 3/4
+soft-fail-on:
+  - LOW
+  - MEDIUM
+hard-fail-on:
+  - HIGH
+  - CRITICAL

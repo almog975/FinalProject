@@ -1,16 +1,17 @@
-# DevSecOps Shop — DevOps (Phase 3 + Phase 5)
+# DevSecOps Shop — DevOps (Phases 3–5)
 
 Presenter runbook (all phases): [`../DEMO.md`](../DEMO.md).
 
-Helm chart for deploying the shop API + Postgres on **Minikube** (Phase 3), plus **Terraform + Prometheus/Grafana/Loki monitoring** (Phase 5).
-
-Jenkins CI/CD (Phase 4) may live in sibling dirs / a separate PR (`jenkins/`, `security/`, `newman/`) and is **not required** to run Phase 3 or Phase 5 from `main`.
+Helm chart for Minikube (Phase 3), **Jenkins CI/CD with hard gates** (Phase 4), and **Terraform + Prometheus/Grafana/Loki** (Phase 5).
 
 ## Layout
 
 ```
 devsecops-shop-devops/
   helm/shop/                 # Minikube Helm chart (API + in-chart Postgres) — Phase 3
+  jenkins/                   # Declarative Jenkinsfile + helper scripts — Phase 4
+  security/                  # gitleaks / checkov / policies — Phase 4
+  newman/                    # Postman collection — Phase 4
   terraform/                 # Local/Minikube Terraform (no cloud bills by default) — Phase 5
   monitoring/                # kube-prometheus-stack + Loki values + Grafana dashboard — Phase 5
 ```
@@ -90,6 +91,105 @@ Sample SBOM + scan-report JSON under `helm/shop/files/` are mounted into the API
 kubectl -n shop get pods,svc,ingress
 kubectl -n shop logs -l app.kubernetes.io/component=api -f
 helm uninstall shop -n shop
+```
+
+---
+
+## Phase 4 — Jenkins pipeline
+
+### Stages
+
+| # | Stage | Hard gate? | Notes |
+|---|-------|------------|-------|
+| 1 | Checkout | — | SCM + short SHA tag |
+| 2 | Lint | yes (flake8 / helm / hadolint error) | flake8 app; helm lint; hadolint |
+| 3 | Test | **yes** | pytest + coverage **≥70%** |
+| 4 | Secrets | **yes** | gitleaks detect — fail on findings |
+| 5 | SAST | advisory | SonarQube if `SONAR_HOST_URL`; else **unstable** + WARN (not silent pass) |
+| 6 | Build | yes | `docker build` → `shop-api:${GIT_COMMIT}` (+ BUILD_NUMBER, phase2) |
+| 7 | Container scan | **yes** | Trivy — fail on **CRITICAL** |
+| 8 | IaC scan | **yes** | Checkov on `helm/shop` — fail on **HIGH+** |
+| 9 | SBOM | — | syft → `sbom.json` (fallback script if no syft); optional grype |
+| 10 | Push | skippable | GHCR `ghcr.io/almog975/shop-api:...` when creds present |
+| 11 | Deploy (dev) | skippable | `helm upgrade --install` + `values-dev` when cluster up |
+| 12 | Verify | smoke | Newman/curl vs deploy URL **or** `helm template` smoke |
+
+Hard-gate details: [`security/policies/README.md`](security/policies/README.md).
+
+### How to run the Jenkinsfile
+
+1. Install a Jenkins controller (LTS) with the **Pipeline** plugin.
+2. Point a Multibranch Pipeline or Pipeline job at this monorepo; set **Script Path** to:
+   ```
+   devsecops-shop-devops/jenkins/Jenkinsfile
+   ```
+3. Use agent label `any` (or a Docker agent image that already has the tools below on `PATH`).
+4. Build the `main` branch.
+
+Paths inside the Jenkinsfile are relative to the **monorepo root**.
+
+### Credentials & environment
+
+| Name | Type | Purpose |
+|------|------|---------|
+| `ghcr-creds` | Username/password | Docker login to `ghcr.io` (user `almog975`, PAT with `write:packages`) |
+| `GHCR_TOKEN` | Env / secret text | Fallback token if Jenkins credential id missing |
+| `GHCR_USER` | Env | Optional; defaults to `almog975` with token login |
+| `SONAR_HOST_URL` | Env | SonarQube server; **omit** to skip SAST (marks build **UNSTABLE**) |
+| `SONAR_TOKEN` | Secret text | SonarQube auth |
+| Kubeconfig | Agent file / env | Needed for Deploy; Verify falls back to helm template |
+
+### Agent tools (student Jenkins)
+
+Install on the agent (or bake into the agent image) so they are on `PATH`:
+
+| Tool | Used for |
+|------|----------|
+| `docker` | Build / tag / push |
+| `helm` | Lint, deploy, template verify |
+| `python3` + venv | flake8, pytest, helper scripts |
+| `flake8` | App lint (also `pip install` in stage) |
+| `hadolint` | Dockerfile lint |
+| `gitleaks` | Secrets (hard gate) |
+| `trivy` | Image scan (hard gate) |
+| `checkov` | Helm IaC (hard gate) |
+| `syft` | SBOM (fallback script if missing) |
+| `newman` or `npx newman` | API verify |
+| `kubectl` | Deploy / live verify |
+| `sonar-scanner` | Optional SAST |
+| `grype` | Optional SBOM vuln table |
+| `curl` | Health smoke |
+
+### SonarQube note
+
+If `SONAR_HOST_URL` is **not** set, the SAST stage calls Jenkins `unstable()` and prints a clear WARN. That is intentional — do not treat a green build as “SAST passed” without Sonar configured.
+
+Coverage follow-up: the Test stage already enforces `--cov-fail-under=70` via pytest-cov. If an agent cannot install pytest-cov, fall back to `pytest -q` and document the gap — current Jenkinsfile prefers the gate.
+
+## Newman (local)
+
+```bash
+# API up on localhost:5000 (compose or port-forward)
+newman run newman/shop-api.postman_collection.json --env-var baseUrl=http://localhost:5000
+# or: npx newman run ...
+```
+
+Collection covers: `/health`, `/ready`, products CRUD, cart, orders, `GET /api/security/sbom`, `GET /api/security/scan-report`.
+
+## Local pipeline-ish checks (no Jenkins)
+
+```bash
+# From monorepo root
+cd devsecops-shop-app && python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt flake8
+flake8 app wsgi.py --max-line-length=100
+pytest -q --cov=app --cov-fail-under=70
+cd ..
+helm lint devsecops-shop-devops/helm/shop -f devsecops-shop-devops/helm/shop/values-dev.yaml
+# if installed:
+gitleaks detect --source . --config devsecops-shop-devops/security/.gitleaks.toml
+checkov -d devsecops-shop-devops/helm/shop --framework helm \
+  --config-file devsecops-shop-devops/security/.checkov.yaml
 ```
 
 ---

@@ -13,7 +13,7 @@ Monorepo: [`almog975/FinalProject`](https://github.com/almog975/FinalProject).
 
 Optional helper: [`scripts/demo.sh`](scripts/demo.sh) prints the ordered commands.
 
-> **Phase 4 note:** Jenkins assets live under `devsecops-shop-devops/jenkins/` (PR `#4` / branch `phase-4-jenkins-pipeline`). If that PR is not yet on `main`, check out that branch (or merge `#4`) before pointing Jenkins at the Script Path below.
+> **Phase 4:** Jenkins assets live under `devsecops-shop-devops/jenkins/` (Script Path below).
 
 ---
 
@@ -154,7 +154,7 @@ Details: [`devsecops-shop-devops/README.md`](devsecops-shop-devops/README.md).
    devsecops-shop-devops/jenkins/Jenkinsfile
    ```
 
-4. Build branch `main` (after Phase 4 merge) or `phase-4-jenkins-pipeline`.
+4. Build branch `main`.
 
 Paths inside the Jenkinsfile are relative to the **monorepo root**.
 
@@ -300,7 +300,7 @@ Use this as a defense punch-list:
 | Host `flask security-ingest` DNS fail on `postgres` | Hostname only resolves **inside** Compose; use `docker compose exec api flask security-ingest ...` or point `DATABASE_URL` at `localhost`. |
 | Grafana empty panels | Hit the API a few times; confirm ServiceMonitor / `/metrics` scrape; wait 1–2 minutes. |
 | Terraform wants cloud | Keep `enable_cloud=false` (validation error if true). Use Helm option A if you prefer not to apply TF to the cluster. |
-| Phase 4 paths missing on `main` | Checkout / merge `phase-4-jenkins-pipeline` (PR `#4`). |
+| Phase 4 paths missing | Confirm you are on latest `main` (Jenkins under `devsecops-shop-devops/jenkins/`). |
 
 ---
 
