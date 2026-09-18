@@ -59,6 +59,9 @@ See [`../terraform/README.md`](../terraform/README.md). Set `enable_monitoring=t
 
 ```bash
 # Grafana (admin / prom-operator — demo password in values; change locally)
+# Preferred on Minikube (NodePort in values):
+minikube service kube-prometheus-stack-grafana -n monitoring --url
+# Or:
 kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
 # open http://localhost:3000  → dashboard "DevSecOps Shop API"
 
