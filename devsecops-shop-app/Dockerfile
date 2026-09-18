@@ -21,15 +21,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --shell /bin/bash appuser
+    && useradd --create-home --shell /bin/bash appuser \
+    && mkdir -p /artifacts \
+    && chown appuser:appuser /artifacts
 
 COPY --from=builder /install /usr/local
 COPY app/ ./app/
+COPY samples/ ./samples/
 COPY wsgi.py .
 
 ENV FLASK_APP=wsgi:app \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    SECURITY_ARTIFACTS_DIR=/artifacts
 
 USER appuser
 

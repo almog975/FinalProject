@@ -56,12 +56,3 @@ def test_metrics(client):
     assert resp.status_code == 200
     assert b"flask_http" in resp.data or b"python_" in resp.data or b"#" in resp.data
 
-
-def test_security_stubs(client):
-    sbom = client.get("/api/security/sbom")
-    assert sbom.status_code == 404
-    assert "TODO" in sbom.get_json()["message"]
-
-    scan = client.get("/api/security/scan-report")
-    assert scan.status_code == 404
-    assert "TODO" in scan.get_json()["message"]
