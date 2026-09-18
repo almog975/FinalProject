@@ -1,6 +1,6 @@
 # FinalProject — Technion DevOps Final Project 15
 
-**DevSecOps Pipeline with Full Security Scanning** — Flask shop API, SBOM/scan reports, Minikube Helm, Jenkins hard gates, and Prometheus/Grafana/Loki on Minikube.
+**DevSecOps Pipeline with Full Security Scanning** — Flask shop API + React admin dashboard, SBOM/scan reports, Minikube Helm, Jenkins hard gates, and Prometheus/Grafana/Loki on Minikube.
 
 | | |
 |-|-|
@@ -14,7 +14,7 @@
 
 | Phase | Deliverable | Location |
 |-------|-------------|----------|
-| **1** | Flask shop API (products, cart, orders), Docker Compose, health/ready/metrics | [`devsecops-shop-app/`](devsecops-shop-app/) |
+| **1** | Flask shop API (products, cart, orders) + **React admin dashboard** (Vite/TS, Flask-served), Docker Compose, health/ready/metrics | [`devsecops-shop-app/`](devsecops-shop-app/) |
 | **2** | SBOM + vulnerability scan-report endpoints (`/api/security/*`), samples + ingest | same app + `samples/` |
 | **3** | Helm chart for Minikube (API + in-chart Postgres), Ingress `shop.local` | [`devsecops-shop-devops/helm/shop`](devsecops-shop-devops/helm/shop) |
 | **4** | Jenkins declarative pipeline with **hard gates** (secrets / Trivy CRITICAL / Checkov HIGH / coverage ≥70%) | [`devsecops-shop-devops/jenkins/`](devsecops-shop-devops/jenkins/) |
@@ -57,7 +57,7 @@ flowchart TB
   Loki --> Graf
 ```
 
-**Request path (demo):** browser/curl → `shop.local` (Ingress) → shop-api → Postgres.  
+**Request path (demo):** browser (React dashboard at `/`) or curl → `shop.local` (Ingress) → shop-api → Postgres. SPA assets ship inside the API image — **no microservices split**.  
 **Observability:** shop-api exposes `GET /metrics` → scraped by Prometheus → Grafana dashboard *DevSecOps Shop API*.
 
 ---
@@ -69,8 +69,8 @@ FinalProject/
   README.md                      # this file
   DEMO.md                        # Phase 6 presenter runbook
   scripts/demo.sh                # ordered demo command printer
-  devsecops-shop-app/            # Phase 1–2 Flask API
-    app/ Dockerfile docker-compose.yml samples/ tests/
+  devsecops-shop-app/            # Phase 1–2 Flask API + React dashboard
+    app/ frontend/ Dockerfile docker-compose.yml samples/ tests/
   devsecops-shop-devops/         # Phase 3–5 (Helm, Jenkins, Terraform, monitoring)
     helm/shop/                   # Minikube chart + values-dev.yaml
     jenkins/                     # Jenkinsfile + helper scripts (Phase 4)

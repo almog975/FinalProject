@@ -44,3 +44,28 @@ export type HealthStatus = {
   status: string
   error?: string
 }
+
+export type SbomArtifact = {
+  bomFormat?: string
+  specVersion?: string
+  components?: Array<{
+    name?: string
+    version?: string
+    type?: string
+    purl?: string
+  }>
+}
+
+export type ScanArtifact = {
+  summary?: Record<string, number>
+  vulnerabilities?: Array<{
+    vulnerabilityID?: string
+    pkgName?: string
+    installedVersion?: string
+    fixedVersion?: string
+    severity?: string
+    title?: string
+  }>
+  scanner?: { name?: string; version?: string }
+  artifactName?: string
+}

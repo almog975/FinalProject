@@ -131,15 +131,25 @@ curl -s http://shop.local/api/security/sbom | head
 kubectl -n shop get pods,svc,ingress
 ```
 
-**Shop UI (Flask-served SPA):** after rebuilding/redeploying the API image with the frontend stage, open the same URL in a browser:
+### UI dashboard (admin SPA)
+
+The React admin dashboard is built into the **same** `shop-api:phase2` image and served by Flask at `/` (no separate frontend service). Curl API demos above still apply.
 
 ```bash
+# Rebuild image (includes Vite SPA) and restart the Helm deployment
+cd devsecops-shop-app
+minikube image build -t shop-api:phase2 .
+kubectl -n shop rollout restart deploy/shop
+# or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
+#       -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop
+
 minikube service shop -n shop --url
-# open the printed URL — UI at /, API at /api, /health, /ready
+# Open the printed URL (or http://shop.local) — UI at /
 ```
 
-Local Compose + Vite: `cd devsecops-shop-app/frontend && npm run dev` (API via `docker compose up`).
+Pages (left sidebar): **Overview** | **Products** | **Cart** | **Orders** | **Security** | **System**.
 
+Local Compose + Vite: `cd devsecops-shop-app/frontend && npm run dev` (API via `docker compose up`).
 
 Smoke-render **without** a cluster:
 
@@ -299,6 +309,7 @@ Use this as a defense punch-list:
 - [ ] **Metrics**: `/metrics` shows `flask_http_request_*` (or instrumentator metrics)
 - [ ] **pytest**: coverage ≥ 70%
 - [ ] **Helm**: pods Running in `shop`; Ingress `shop.local`; `/health` via Ingress
+- [ ] **UI dashboard**: browser at `/` — Overview | Products | Cart | Orders | Security | System
 - [ ] **Jenkins**: Script Path screenshot + hard-gates table (secrets / CRITICAL / HIGH / coverage)
 - [ ] **Monitoring**: Grafana “DevSecOps Shop API” dashboard; Prometheus target UP (or scrape proof via port-forward)
 - [ ] **Terraform**: `validate` / `plan` with `enable_cloud=false`; mention `enable_monitoring` opt-in
