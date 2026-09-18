@@ -15,7 +15,7 @@ pipeline {
   agent any
 
   options {
-    timestamps()
+    // timestamps() requires the Timestamper plugin — omit for stock Jenkins.
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
