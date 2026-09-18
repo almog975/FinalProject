@@ -33,9 +33,9 @@ cd ..
 # --- Phase 3: Minikube + Helm ---
 minikube start --memory=4096 --cpus=2
 minikube addons enable ingress
-cd devsecops-shop-app
-minikube image build -t shop-api:phase2 .
-cd ../devsecops-shop-devops
+./scripts/build-shop-image.sh              # docker build+load OR minikube image build
+# (alt) cd devsecops-shop-app && minikube image build -t shop-api:phase2 .
+cd devsecops-shop-devops
 helm upgrade --install shop ./helm/shop -f helm/shop/values-dev.yaml -n shop --create-namespace
 echo "$(minikube ip) shop.local"   # add to /etc/hosts with sudo
 curl -s http://shop.local/health
@@ -46,6 +46,7 @@ cd ..
 
 # --- Phase 4: Jenkins (document / configure) ---
 # Script Path: devsecops-shop-devops/jenkins/Jenkinsfile
+# USE_DOCKER_AGENT=false by default (no docker.sock). Check only when node has sock.
 # Hard gates: gitleaks any finding | Trivy CRITICAL | Checkov HIGH+ | coverage <70%
 
 # --- Phase 5: Monitoring (Helm) ---
