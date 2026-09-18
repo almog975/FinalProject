@@ -1,85 +1,37 @@
 // Phase 4 — Declarative Jenkins pipeline for DevSecOps Shop (monorepo)
-// Runs on a Kubernetes pod agent with tool sidecars (no tools required on JNLP).
-// No docker.sock hostPath — Minikube Windows has no /var/run/docker.sock on the node;
-// a Socket hostPath would block the ENTIRE pod at ContainerCreating.
+//
+// Dual-path Docker agent (opt-in):
+//   USE_DOCKER_AGENT=false (DEFAULT) → pod-templates/default.yaml
+//     Sidecars only (python, gitleaks, checkov, trivy, helm).
+//     NO docker container, NO docker.sock hostPath.
+//     Safe for student Minikube / broken host Docker (Windows Minikube has no
+//     /var/run/docker.sock on the node — a Socket hostPath would block the
+//     ENTIRE pod at ContainerCreating).
+//   USE_DOCKER_AGENT=true → pod-templates/with-docker.yaml
+//     Same sidecars PLUS docker:27-cli + hostPath docker.sock.
+//     ONLY enable when the Jenkins K8s node has a real docker.sock
+//     (Docker Desktop / Linux dockerd / minikube docker-env node).
+//     Pod will Pending if the socket is missing.
+//
 // Requires Jenkins Kubernetes plugin + a configured cloud (Minikube Jenkins chart OK).
-// Do NOT add a jnlp container here — the plugin injects it.
+// Do NOT add a jnlp container in the YAML — the plugin injects it.
 //
 // Credentials / env:
-//   GHCR_TOKEN or usernamePassword 'ghcr-creds'  — push (skipped without image/docker)
+//   GHCR_TOKEN or usernamePassword 'ghcr-creds'  — push (needs USE_DOCKER_AGENT)
 //   SONAR_HOST_URL, SONAR_TOKEN                   — SonarQube SAST (skip → unstable if unset)
 //
 // Hard gates (when tools run): gitleaks findings, Trivy CRITICAL (if image built),
 // Checkov HIGH, pytest failure. See security/policies/README.md.
 
 pipeline {
-  agent {
-    kubernetes {
-      defaultContainer 'python'
-      yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  # Keep requests tiny: 1-node Minikube also runs jenkins-0 (+ shop).
-  # Run only ONE build at a time on student Minikube (disableConcurrentBuilds).
-  containers:
-  - name: python
-    image: python:3.11-slim
-    command: [cat]
-    tty: true
-    resources:
-      requests:
-        cpu: "50m"
-        memory: "256Mi"
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
-  - name: gitleaks
-    image: zricethezav/gitleaks:v8.18.4
-    command: [cat]
-    tty: true
-    resources:
-      requests:
-        cpu: "25m"
-        memory: "128Mi"
-      limits:
-        cpu: "200m"
-        memory: "256Mi"
-  - name: checkov
-    image: bridgecrew/checkov:3.2.257
-    command: [cat]
-    tty: true
-    resources:
-      requests:
-        cpu: "25m"
-        memory: "128Mi"
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
-  - name: trivy
-    image: aquasec/trivy:0.56.2
-    command: [cat]
-    tty: true
-    resources:
-      requests:
-        cpu: "25m"
-        memory: "128Mi"
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
-  - name: helm
-    image: alpine/helm:3.16.2
-    command: [cat]
-    tty: true
-    resources:
-      requests:
-        cpu: "25m"
-        memory: "128Mi"
-      limits:
-        cpu: "200m"
-        memory: "256Mi"
-'''
-    }
+  agent none
+
+  parameters {
+    booleanParam(
+      name: 'USE_DOCKER_AGENT',
+      defaultValue: false,
+      description: 'Mount docker.sock + docker:27-cli sidecar. DEFAULT false (safe for Minikube without Docker). Set true ONLY when the K8s node has a real /var/run/docker.sock — otherwise the agent pod stays Pending.'
+    )
   }
 
   options {
@@ -104,240 +56,314 @@ spec:
   }
 
   stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-        script {
-          // defaultContainer is python (no git binary). Use Jenkins SCM env after checkout.
-          def full = (env.GIT_COMMIT ?: '').trim()
-          if (full) {
-            env.GIT_COMMIT_SHORT = full.take(7)
-          } else {
-            env.GIT_COMMIT_SHORT = "b${env.BUILD_NUMBER}"
-            echo "WARN: GIT_COMMIT unset after checkout — falling back to ${env.GIT_COMMIT_SHORT}"
-          }
-          env.IMAGE_TAG = env.GIT_COMMIT_SHORT
-          echo "Building ${IMAGE_NAME}:${IMAGE_TAG} (BUILD_NUMBER=${BUILD_NUMBER})"
+    stage('CI') {
+      agent {
+        kubernetes {
+          defaultContainer 'python'
+          yamlFile(params.USE_DOCKER_AGENT ?
+            'devsecops-shop-devops/jenkins/pod-templates/with-docker.yaml' :
+            'devsecops-shop-devops/jenkins/pod-templates/default.yaml')
         }
       }
-    }
-
-    stage('Lint') {
-      steps {
-        container('python') {
-          dir("${APP_DIR}") {
-            sh '''
-              set -e
-              python -m venv .venv-ci
-              . .venv-ci/bin/activate
-              pip install -q -U pip
-              pip install -q -r requirements-dev.txt flake8
-              flake8 app wsgi.py --max-line-length=100 --exclude=.venv,.venv-ci,__pycache__
-            '''
+      stages {
+        stage('Checkout') {
+          steps {
+            checkout scm
+            script {
+              // defaultContainer is python (no git binary). Use Jenkins SCM env after checkout.
+              def full = (env.GIT_COMMIT ?: '').trim()
+              if (full) {
+                env.GIT_COMMIT_SHORT = full.take(7)
+              } else {
+                env.GIT_COMMIT_SHORT = "b${env.BUILD_NUMBER}"
+                echo "WARN: GIT_COMMIT unset after checkout — falling back to ${env.GIT_COMMIT_SHORT}"
+              }
+              env.IMAGE_TAG = env.GIT_COMMIT_SHORT
+              echo "Building ${IMAGE_NAME}:${IMAGE_TAG} (BUILD_NUMBER=${BUILD_NUMBER}, USE_DOCKER_AGENT=${params.USE_DOCKER_AGENT})"
+            }
           }
         }
-        container('helm') {
-          sh '''
-            set -e
-            helm lint "${CHART_DIR}"
-            helm lint "${CHART_DIR}" -f "${CHART_DIR}/values-dev.yaml"
-          '''
-        }
-      }
-    }
 
-    stage('Test') {
-      steps {
-        container('python') {
-          dir("${APP_DIR}") {
-            sh '''
-              set -e
-              . .venv-ci/bin/activate
-              pip install -q -r requirements-dev.txt
-              pytest -q --cov=app --cov-report=term-missing --cov-fail-under=${COVERAGE_MIN}
-            '''
+        stage('Lint') {
+          steps {
+            container('python') {
+              dir("${APP_DIR}") {
+                sh '''
+                  set -e
+                  python -m venv .venv-ci
+                  . .venv-ci/bin/activate
+                  pip install -q -U pip
+                  pip install -q -r requirements-dev.txt flake8
+                  flake8 app wsgi.py --max-line-length=100 --exclude=.venv,.venv-ci,__pycache__
+                '''
+              }
+            }
+            container('helm') {
+              sh '''
+                set -e
+                helm lint "${CHART_DIR}"
+                helm lint "${CHART_DIR}" -f "${CHART_DIR}/values-dev.yaml"
+              '''
+            }
           }
         }
-      }
-    }
 
-    stage('Secrets') {
-      steps {
-        container('gitleaks') {
-          sh '''
-            set -e
-            gitleaks detect \
-              --source . \
-              --config "${DEVOPS_DIR}/security/.gitleaks.toml" \
-              --report-path gitleaks-report.json \
-              --report-format json \
-              --verbose
-          '''
+        stage('Test') {
+          steps {
+            container('python') {
+              dir("${APP_DIR}") {
+                sh '''
+                  set -e
+                  . .venv-ci/bin/activate
+                  pip install -q -r requirements-dev.txt
+                  pytest -q --cov=app --cov-report=term-missing --cov-fail-under=${COVERAGE_MIN}
+                '''
+              }
+            }
+          }
         }
-      }
-    }
 
-    stage('SAST') {
-      steps {
-        script {
-          if (env.SONAR_HOST_URL?.trim()) {
+        stage('Secrets') {
+          steps {
+            container('gitleaks') {
+              sh '''
+                set -e
+                gitleaks detect \
+                  --source . \
+                  --config "${DEVOPS_DIR}/security/.gitleaks.toml" \
+                  --report-path gitleaks-report.json \
+                  --report-format json \
+                  --verbose
+              '''
+            }
+          }
+        }
+
+        stage('SAST') {
+          steps {
+            script {
+              if (env.SONAR_HOST_URL?.trim()) {
+                container('python') {
+                  sh '''
+                    set -e
+                    echo "ERROR: SONAR_HOST_URL is set but sonar-scanner is not bundled in this pod."
+                    echo "Install a sonar-scanner sidecar or unset SONAR_HOST_URL for student demos."
+                    exit 1
+                  '''
+                }
+              } else {
+                echo 'WARN: SONAR_HOST_URL not set — skipping SonarQube SAST (not a silent pass)'
+                unstable('SonarQube skipped — configure SONAR_HOST_URL / SONAR_TOKEN')
+              }
+            }
+          }
+        }
+
+        stage('Build') {
+          steps {
+            script {
+              if (params.USE_DOCKER_AGENT) {
+                container('docker') {
+                  dir("${APP_DIR}") {
+                    sh '''
+                      set -e
+                      docker build \
+                        -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                        -t ${IMAGE_NAME}:${BUILD_NUMBER} \
+                        -t ${IMAGE_NAME}:phase2 \
+                        .
+                    '''
+                  }
+                }
+                env.IMAGE_BUILT = 'true'
+                echo "Docker image built: ${IMAGE_NAME}:${IMAGE_TAG}"
+              } else {
+                // Default path: no docker sidecar / hostPath sock (breaks Minikube Windows agent pods).
+                echo 'WARN: Docker build not available (USE_DOCKER_AGENT=false, no docker.sock mount) — skipping Build/Trivy/Push'
+                unstable('Docker unavailable on Minikube agent pod — image build skipped')
+                env.IMAGE_BUILT = 'false'
+              }
+            }
+          }
+        }
+
+        stage('Container scan') {
+          when {
+            expression { return env.IMAGE_BUILT == 'true' }
+          }
+          steps {
+            container('trivy') {
+              sh '''
+                set -e
+                trivy image --severity CRITICAL --exit-code 1 --ignore-unfixed \
+                  ${IMAGE_NAME}:${IMAGE_TAG}
+                trivy image --format json --output ${SCAN_REPORT} \
+                  ${IMAGE_NAME}:${IMAGE_TAG} || true
+              '''
+            }
             container('python') {
               sh '''
                 set -e
-                echo "ERROR: SONAR_HOST_URL is set but sonar-scanner is not bundled in this pod."
-                echo "Install a sonar-scanner sidecar or unset SONAR_HOST_URL for student demos."
-                exit 1
+                if [ -f "${SCAN_REPORT}" ]; then
+                  python "${DEVOPS_DIR}/jenkins/scripts/summarize_trivy.py" \
+                    ${SCAN_REPORT} ${SCAN_REPORT}.summary.json \
+                    || cp ${SCAN_REPORT} ${SCAN_REPORT}.summary.json
+                fi
               '''
             }
-          } else {
-            echo 'WARN: SONAR_HOST_URL not set — skipping SonarQube SAST (not a silent pass)'
-            unstable('SonarQube skipped — configure SONAR_HOST_URL / SONAR_TOKEN')
           }
         }
-      }
-    }
 
-    stage('Build') {
-      steps {
-        script {
-          // No docker sidecar / hostPath sock (breaks Minikube Windows agent pods).
-          echo 'WARN: Docker build not available in this agent pod (no docker.sock mount) — skipping Build/Trivy/Push'
-          unstable('Docker unavailable on Minikube agent pod — image build skipped')
-          env.IMAGE_BUILT = 'false'
-        }
-      }
-    }
-
-    stage('Container scan') {
-      when {
-        expression { return env.IMAGE_BUILT == 'true' }
-      }
-      steps {
-        container('trivy') {
-          sh '''
-            set -e
-            trivy image --severity CRITICAL --exit-code 1 --ignore-unfixed \
-              ${IMAGE_NAME}:${IMAGE_TAG}
-            trivy image --format json --output ${SCAN_REPORT} \
-              ${IMAGE_NAME}:${IMAGE_TAG} || true
-          '''
-        }
-        container('python') {
-          sh '''
-            set -e
-            if [ -f "${SCAN_REPORT}" ]; then
-              python "${DEVOPS_DIR}/jenkins/scripts/summarize_trivy.py" \
-                ${SCAN_REPORT} ${SCAN_REPORT}.summary.json \
-                || cp ${SCAN_REPORT} ${SCAN_REPORT}.summary.json
-            fi
-          '''
-        }
-      }
-    }
-
-    stage('IaC scan') {
-      steps {
-        container('checkov') {
-          sh '''
-            set -e
-            checkov -d "${CHART_DIR}" \
-              --framework helm \
-              --config-file "${DEVOPS_DIR}/security/.checkov.yaml" \
-              --soft-fail-on LOW,MEDIUM \
-              --hard-fail-on HIGH,CRITICAL \
-              -o cli -o json \
-              --output-file-path . \
-              --compact
-          '''
-        }
-      }
-    }
-
-    stage('SBOM') {
-      steps {
-        container('python') {
-          sh '''
-            set -e
-            python "${DEVOPS_DIR}/jenkins/scripts/sbom_fallback.py" "${APP_DIR}" "${SBOM_FILE}"
-            ls -la ${SBOM_FILE}
-          '''
-        }
-      }
-    }
-
-    stage('Push') {
-      when {
-        expression { return env.IMAGE_BUILT == 'true' }
-      }
-      steps {
-        echo 'Push skipped unless IMAGE_BUILT=true (requires docker, not mounted on this agent).'
-      }
-    }
-
-    stage('Deploy (dev)') {
-      steps {
-        container('helm') {
-          script {
-            def kubeOk = sh(
-              script: 'helm list -A >/dev/null 2>&1',
-              returnStatus: true
-            ) == 0
-            if (kubeOk) {
+        stage('IaC scan') {
+          steps {
+            container('checkov') {
               sh '''
                 set -e
-                helm upgrade --install ${DEPLOY_RELEASE} ${CHART_DIR} \
-                  -f ${CHART_DIR}/values-dev.yaml \
-                  -n ${DEPLOY_NS} --create-namespace \
-                  --set api.image.repository=${IMAGE_NAME} \
-                  --set api.image.tag=${IMAGE_TAG} \
-                  --wait --timeout 5m || \
-                helm upgrade --install ${DEPLOY_RELEASE} ${CHART_DIR} \
-                  -f ${CHART_DIR}/values-dev.yaml \
-                  -n ${DEPLOY_NS} --create-namespace \
-                  --set api.image.repository=${IMAGE_NAME} \
-                  --set api.image.tag=${IMAGE_TAG} \
-                  --timeout 5m
+                checkov -d "${CHART_DIR}" \
+                  --framework helm \
+                  --config-file "${DEVOPS_DIR}/security/.checkov.yaml" \
+                  --soft-fail-on LOW,MEDIUM \
+                  --hard-fail-on HIGH,CRITICAL \
+                  -o cli -o json \
+                  --output-file-path . \
+                  --compact
               '''
-            } else {
-              echo 'WARN: cluster API not reachable from helm container — skipping Deploy (dev)'
             }
           }
         }
-      }
-    }
 
-    stage('Verify') {
-      steps {
-        container('helm') {
-          sh '''
-            set -e
-            COLLECTION="${DEVOPS_DIR}/newman/shop-api.postman_collection.json"
-            echo "helm template smoke verify (Newman needs a live URL — run manually when API is up)"
-            helm template ${DEPLOY_RELEASE} ${CHART_DIR} \
-              -f ${CHART_DIR}/values-dev.yaml \
-              -n ${DEPLOY_NS} > /tmp/helm-smoke.yaml
-            grep -q "kind: Deployment" /tmp/helm-smoke.yaml
-            echo "helm template smoke OK ($(wc -l < /tmp/helm-smoke.yaml) lines)"
-            echo "Newman collection present at ${COLLECTION}"
-          '''
+        stage('SBOM') {
+          steps {
+            container('python') {
+              sh '''
+                set -e
+                python "${DEVOPS_DIR}/jenkins/scripts/sbom_fallback.py" "${APP_DIR}" "${SBOM_FILE}"
+                ls -la ${SBOM_FILE}
+              '''
+            }
+          }
+        }
+
+        stage('Push') {
+          when {
+            expression { return env.IMAGE_BUILT == 'true' }
+          }
+          steps {
+            script {
+              // Prefer Jenkins credential 'ghcr-creds'; fall back to GHCR_TOKEN env; else skip.
+              def pushed = false
+              try {
+                withCredentials([
+                  usernamePassword(
+                    credentialsId: 'ghcr-creds',
+                    usernameVariable: 'GHCR_USER',
+                    passwordVariable: 'GHCR_PASS'
+                  )
+                ]) {
+                  container('docker') {
+                    sh '''
+                      set -e
+                      echo "${GHCR_PASS}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+                      docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${IMAGE_TAG}
+                      docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${BUILD_NUMBER}
+                      docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:phase2
+                      docker push ${GHCR_IMAGE}:${IMAGE_TAG}
+                      docker push ${GHCR_IMAGE}:${BUILD_NUMBER}
+                      docker push ${GHCR_IMAGE}:phase2
+                    '''
+                  }
+                  pushed = true
+                }
+              } catch (ignored) {
+                echo "INFO: Jenkins credential 'ghcr-creds' not available — trying GHCR_TOKEN env"
+              }
+              if (!pushed && env.GHCR_TOKEN?.trim()) {
+                container('docker') {
+                  sh '''
+                    set -e
+                    echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER:-almog975}" --password-stdin
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${IMAGE_TAG}
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${BUILD_NUMBER}
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:phase2
+                    docker push ${GHCR_IMAGE}:${IMAGE_TAG}
+                    docker push ${GHCR_IMAGE}:${BUILD_NUMBER}
+                    docker push ${GHCR_IMAGE}:phase2
+                  '''
+                }
+                pushed = true
+              }
+              if (!pushed) {
+                echo 'WARN: GHCR credentials not configured (ghcr-creds / GHCR_TOKEN) — skipping push'
+              }
+            }
+          }
+        }
+
+        stage('Deploy (dev)') {
+          steps {
+            container('helm') {
+              script {
+                def kubeOk = sh(
+                  script: 'helm list -A >/dev/null 2>&1',
+                  returnStatus: true
+                ) == 0
+                if (kubeOk) {
+                  sh '''
+                    set -e
+                    helm upgrade --install ${DEPLOY_RELEASE} ${CHART_DIR} \
+                      -f ${CHART_DIR}/values-dev.yaml \
+                      -n ${DEPLOY_NS} --create-namespace \
+                      --set api.image.repository=${IMAGE_NAME} \
+                      --set api.image.tag=${IMAGE_TAG} \
+                      --wait --timeout 5m || \
+                    helm upgrade --install ${DEPLOY_RELEASE} ${CHART_DIR} \
+                      -f ${CHART_DIR}/values-dev.yaml \
+                      -n ${DEPLOY_NS} --create-namespace \
+                      --set api.image.repository=${IMAGE_NAME} \
+                      --set api.image.tag=${IMAGE_TAG} \
+                      --timeout 5m
+                  '''
+                } else {
+                  echo 'WARN: cluster API not reachable from helm container — skipping Deploy (dev)'
+                }
+              }
+            }
+          }
+        }
+
+        stage('Verify') {
+          steps {
+            container('helm') {
+              sh '''
+                set -e
+                COLLECTION="${DEVOPS_DIR}/newman/shop-api.postman_collection.json"
+                echo "helm template smoke verify (Newman needs a live URL — run manually when API is up)"
+                helm template ${DEPLOY_RELEASE} ${CHART_DIR} \
+                  -f ${CHART_DIR}/values-dev.yaml \
+                  -n ${DEPLOY_NS} > /tmp/helm-smoke.yaml
+                grep -q "kind: Deployment" /tmp/helm-smoke.yaml
+                echo "helm template smoke OK ($(wc -l < /tmp/helm-smoke.yaml) lines)"
+                echo "Newman collection present at ${COLLECTION}"
+              '''
+            }
+          }
+        }
+      } // nested stages
+      post {
+        always {
+          archiveArtifacts artifacts: 'sbom.json,scan-report.json,scan-report.json.summary.json,gitleaks-report.json,results_*.json',
+                           allowEmptyArchive: true
+        }
+        success {
+          echo "Pipeline succeeded — image ${IMAGE_NAME}:${IMAGE_TAG} (IMAGE_BUILT=${IMAGE_BUILT})"
+        }
+        unstable {
+          echo 'Pipeline UNSTABLE (SonarQube skipped and/or Docker unavailable). Hard gates for stages that ran still passed.'
+        }
+        failure {
+          echo 'Pipeline FAILED — check hard gates: secrets / Trivy CRITICAL / Checkov HIGH / pytest'
         }
       }
-    }
-  }
-
-  post {
-    always {
-      archiveArtifacts artifacts: 'sbom.json,scan-report.json,scan-report.json.summary.json,gitleaks-report.json,results_*.json',
-                       allowEmptyArchive: true
-    }
-    success {
-      echo "Pipeline succeeded — image ${IMAGE_NAME}:${IMAGE_TAG} (IMAGE_BUILT=${IMAGE_BUILT})"
-    }
-    unstable {
-      echo 'Pipeline UNSTABLE (SonarQube skipped and/or Docker unavailable). Hard gates for stages that ran still passed.'
-    }
-    failure {
-      echo 'Pipeline FAILED — check hard gates: secrets / Trivy CRITICAL / Checkov HIGH / pytest'
-    }
-  }
+    } // stage CI
+  } // stages
 }

@@ -9,7 +9,7 @@ Helm chart for Minikube (Phase 3), **Jenkins CI/CD with hard gates** (Phase 4), 
 ```
 devsecops-shop-devops/
   helm/shop/                 # Minikube Helm chart (API + in-chart Postgres) — Phase 3
-  jenkins/                   # Declarative Jenkinsfile + helper scripts — Phase 4
+  jenkins/                   # Declarative Jenkinsfile + pod-templates/ + helper scripts — Phase 4
   security/                  # gitleaks / checkov / policies — Phase 4
   newman/                    # Postman collection — Phase 4
   terraform/                 # Local/Minikube Terraform (no cloud bills by default) — Phase 5
@@ -37,13 +37,14 @@ v1 ships a simple Postgres `Deployment` + `Service` + optional PVC / `emptyDir` 
 
 ### Build / load the API image
 
-The chart defaults to `shop-api:phase2`. Build from the app directory and load into Minikube:
+The chart defaults to `shop-api:phase2`. From the **monorepo root**, prefer the helper (auto-selects Docker vs Minikube):
 
 ```bash
-# From monorepo root
-cd ../devsecops-shop-app   # or: cd devsecops-shop-app from FinalProject root
+./scripts/build-shop-image.sh              # tag defaults to phase2
+# ./scripts/build-shop-image.sh mytag
 
-# Option A — Minikube build (preferred when docker points at the Minikube daemon)
+# Manual equivalents (from devsecops-shop-app):
+# Option A — Minikube build (when host Docker is broken / unavailable)
 minikube image build -t shop-api:phase2 .
 
 # Option B — local Docker, then load into Minikube
@@ -117,11 +118,11 @@ helm uninstall shop -n shop
 | 3 | Test | **yes** | pytest + coverage **≥70%** |
 | 4 | Secrets | **yes** | gitleaks detect — fail on findings |
 | 5 | SAST | advisory | SonarQube if `SONAR_HOST_URL`; else **unstable** + WARN (not silent pass) |
-| 6 | Build | yes | `docker build` → `shop-api:${GIT_COMMIT}` (+ BUILD_NUMBER, phase2) |
-| 7 | Container scan | **yes** | Trivy — fail on **CRITICAL** |
+| 6 | Build | when Docker agent | `USE_DOCKER_AGENT` → `docker build` tags; else unstable skip (default Minikube) |
+| 7 | Container scan | **yes** (if image) | Trivy — fail on **CRITICAL**; skipped unless `IMAGE_BUILT=true` |
 | 8 | IaC scan | **yes** | Checkov on `helm/shop` — fail on **HIGH+** |
 | 9 | SBOM | — | syft → `sbom.json` (fallback script if no syft); optional grype |
-| 10 | Push | skippable | GHCR `ghcr.io/almog975/shop-api:...` when creds present |
+| 10 | Push | skippable | GHCR when `IMAGE_BUILT` + `ghcr-creds` / `GHCR_TOKEN` |
 | 11 | Deploy (dev) | skippable | `helm upgrade --install` + `values-dev` when cluster up |
 | 12 | Verify | smoke | Newman/curl vs deploy URL **or** `helm template` smoke |
 
@@ -129,15 +130,24 @@ Hard-gate details: [`security/policies/README.md`](security/policies/README.md).
 
 ### How to run the Jenkinsfile
 
-1. Install a Jenkins controller (LTS) with the **Pipeline** plugin.
+1. Install a Jenkins controller (LTS) with the **Pipeline** + **Kubernetes** plugins (Minikube Jenkins chart is fine).
 2. Point a Multibranch Pipeline or Pipeline job at this monorepo; set **Script Path** to:
    ```
    devsecops-shop-devops/jenkins/Jenkinsfile
    ```
-3. Use agent label `any` (or a Docker agent image that already has the tools below on `PATH`).
-4. Build the `main` branch.
+3. Build the `main` branch. The pipeline uses `agent none` + a Kubernetes pod agent (see templates below).
+4. Paths inside the Jenkinsfile are relative to the **monorepo root**.
 
-Paths inside the Jenkinsfile are relative to the **monorepo root**.
+### Dual-path Docker agent (`USE_DOCKER_AGENT`)
+
+| Param | Default | Pod template | When to use |
+|-------|---------|--------------|-------------|
+| `USE_DOCKER_AGENT=false` | **yes** | [`jenkins/pod-templates/default.yaml`](jenkins/pod-templates/default.yaml) | Student Minikube / broken host Docker — **no** `docker.sock` |
+| `USE_DOCKER_AGENT=true` | no | [`jenkins/pod-templates/with-docker.yaml`](jenkins/pod-templates/with-docker.yaml) | Node has a real `/var/run/docker.sock` (Docker Desktop / Linux dockerd / `minikube docker-env`) |
+
+- **Default is safe:** no docker container and no Socket hostPath (a missing sock on Windows Minikube previously blocked the whole agent at ContainerCreating).
+- **Enable Docker later:** check **USE_DOCKER_AGENT** on the job **and** ensure the K8s node exposes `/var/run/docker.sock`. If the sock is missing, the pod stays Pending.
+- Sidecars (both templates): `python`, `gitleaks`, `checkov`, `trivy`, `helm` (low resource requests). Opt-in adds `docker:27-cli` + `docker-sock` volumeMount.
 
 ### Credentials & environment
 
@@ -152,7 +162,7 @@ Paths inside the Jenkinsfile are relative to the **monorepo root**.
 
 ### Agent tools (student Jenkins)
 
-Install on the agent (or bake into the agent image) so they are on `PATH`:
+Most tools ship as **Kubernetes sidecars** in the pod templates (no install on the JNLP container). For a non-K8s agent, install on `PATH`:
 
 | Tool | Used for |
 |------|----------|

@@ -1,0 +1,84 @@
+# Opt-in Jenkins agent pod WITH Docker CLI + docker.sock hostPath.
+# ONLY enable when the node has a real docker.sock (Docker Desktop /
+# Linux dockerd / minikube docker-env node). Will Pending if sock missing.
+# Select via Jenkins boolean param USE_DOCKER_AGENT=true.
+apiVersion: v1
+kind: Pod
+spec:
+  # Keep requests tiny: 1-node Minikube also runs jenkins-0 (+ shop).
+  # Run only ONE build at a time on student Minikube (disableConcurrentBuilds).
+  containers:
+  - name: python
+    image: python:3.11-slim
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  - name: gitleaks
+    image: zricethezav/gitleaks:v8.18.4
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "128Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+  - name: checkov
+    image: bridgecrew/checkov:3.2.257
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  - name: trivy
+    image: aquasec/trivy:0.56.2
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+  - name: helm
+    image: alpine/helm:3.16.2
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "128Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+  - name: docker
+    image: docker:27-cli
+    command: [cat]
+    tty: true
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+      type: Socket

@@ -39,6 +39,7 @@ cd frontend && npm install && npm run dev
 The multi-stage `Dockerfile` builds the SPA with Node, then copies `dist` into `/app/frontend/dist`. Flask serves `/` (and client-route fallback). After rebuild/redeploy:
 
 ```bash
+# From monorepo root: ../scripts/build-shop-image.sh   (or minikube image build below)
 minikube image build -t shop-api:phase2 .
 kubectl -n shop rollout restart deploy/shop
 # or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop \

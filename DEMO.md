@@ -109,11 +109,12 @@ minikube start --memory=4096 --cpus=2
 minikube addons enable ingress
 
 # Build / load API image (chart default: shop-api:phase2)
-cd devsecops-shop-app
-minikube image build -t shop-api:phase2 .
-# OR: docker build -t shop-api:phase2 . && minikube image load shop-api:phase2
+# Dual path: prefer Minikube when host Docker is broken; use helper or docker when it works.
+./scripts/build-shop-image.sh              # auto: docker build+load OR minikube image build
+# OR manually:
+#   cd devsecops-shop-app && minikube image build -t shop-api:phase2 .
+#   cd devsecops-shop-app && docker build -t shop-api:phase2 . && minikube image load shop-api:phase2
 minikube image ls | grep shop-api
-cd ..
 
 # Install chart
 cd devsecops-shop-devops
@@ -137,8 +138,7 @@ The React admin dashboard is built into the **same** `shop-api:phase2` image and
 
 ```bash
 # Rebuild image (includes Vite SPA) and restart the Helm deployment
-cd devsecops-shop-app
-minikube image build -t shop-api:phase2 .
+./scripts/build-shop-image.sh              # or: cd devsecops-shop-app && minikube image build -t shop-api:phase2 .
 kubectl -n shop rollout restart deploy/shop
 # or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
 #       -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop
@@ -178,6 +178,12 @@ Details: [`devsecops-shop-devops/README.md`](devsecops-shop-devops/README.md).
 4. Build branch `main`.
 
 Paths inside the Jenkinsfile are relative to the **monorepo root**.
+
+### Dual-path Docker agent (opt-in)
+
+- **Default (`USE_DOCKER_AGENT=false`):** agent pod uses `jenkins/pod-templates/default.yaml` — **no** `docker.sock` mount (safe for student Minikube / broken host Docker on Windows).
+- **When Docker works:** check **USE_DOCKER_AGENT** on the build (pod template `with-docker.yaml`) **only if** the Jenkins K8s node has a real `/var/run/docker.sock`. Otherwise the agent stays Pending.
+- Local image for Minikube: `./scripts/build-shop-image.sh` (or `minikube image build`); Jenkins Build/Trivy/Push run only when the Docker agent path is enabled and the image builds.
 
 ### Hard gates (must FAIL the build)
 
