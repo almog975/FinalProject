@@ -108,11 +108,15 @@ spec:
       steps {
         checkout scm
         script {
-          env.GIT_COMMIT_SHORT = sh(
-            script: 'git rev-parse --short HEAD',
-            returnStdout: true
-          ).trim()
-          env.IMAGE_TAG = "${env.GIT_COMMIT_SHORT}"
+          // defaultContainer is python (no git binary). Use Jenkins SCM env after checkout.
+          def full = (env.GIT_COMMIT ?: '').trim()
+          if (full) {
+            env.GIT_COMMIT_SHORT = full.take(7)
+          } else {
+            env.GIT_COMMIT_SHORT = "b${env.BUILD_NUMBER}"
+            echo "WARN: GIT_COMMIT unset after checkout — falling back to ${env.GIT_COMMIT_SHORT}"
+          }
+          env.IMAGE_TAG = env.GIT_COMMIT_SHORT
           echo "Building ${IMAGE_NAME}:${IMAGE_TAG} (BUILD_NUMBER=${BUILD_NUMBER})"
         }
       }
