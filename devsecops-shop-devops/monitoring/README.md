@@ -106,4 +106,5 @@ A later CI stage could `helm upgrade` this stack or run a smoke check against Pr
 ## Out of scope
 
 - Multi-cloud / paid APM / Vault
-- Phase 6 demo runbook
+
+Demo runbook: [`../../DEMO.md`](../../DEMO.md).
