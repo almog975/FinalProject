@@ -1,7 +1,7 @@
 """Cart service with stock validation."""
 
 from app.extensions import db
-from app.models import CartItem, Product
+from app.models import CartItem
 from app.services.product_service import ProductServiceError, get_product
 
 

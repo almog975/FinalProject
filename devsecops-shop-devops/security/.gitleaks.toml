@@ -1,0 +1,23 @@
+# Gitleaks config for DevSecOps Shop monorepo
+# https://github.com/gitleaks/gitleaks
+title = "devsecops-shop"
+
+[extend]
+# Use default gitleaks ruleset, then add project allowlists
+useDefault = true
+
+[allowlist]
+description = "Benign demo placeholders and sample artifacts"
+paths = [
+  '''devsecops-shop-devops/helm/shop/files/''',
+  '''devsecops-shop-app/samples/''',
+  '''.*\.venv.*/.*''',
+  '''.*/__pycache__/.*''',
+  '''.*/\.pytest_cache/.*''',
+]
+regexes = [
+  # Helm/Minikube demo placeholders (not real secrets)
+  '''minikube-dev-secret''',
+  '''password:\s*shop''',
+  '''secretKey:\s*"minikube''',
+]

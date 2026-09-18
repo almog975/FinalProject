@@ -1,104 +1,136 @@
-# DevSecOps Shop — DevOps (Phase 3)
+# DevSecOps Shop — DevOps
 
-Helm chart for deploying the shop API + Postgres on **Minikube**.
+Helm chart (Phase 3) + **Jenkins CI/CD pipeline** (Phase 4) for the shop API.
 
-Jenkins, Terraform, and Prometheus stack are out of scope for this phase.
-
-## Why in-chart Postgres (not Bitnami)
-
-v1 ships a simple Postgres `Deployment` + `Service` + optional PVC / `emptyDir` inside this chart.
-
-- Fewer moving parts for student Minikube demos
-- No external chart repository pull (works offline / air-gapped)
-- Placeholders only for DB credentials — override via values / `--set` for anything beyond local demo
+Out of scope here: Terraform, Prometheus/Grafana stack.
 
 ## Layout
 
 ```
-helm/shop/
-  Chart.yaml
-  values.yaml          # defaults (image shop-api:phase2)
-  values-dev.yaml      # Minikube-oriented overrides
-  files/               # bundled sample SBOM + scan-report (ConfigMap mount)
-  templates/           # api, postgres, ingress, secrets, configmaps
+devsecops-shop-devops/
+  helm/shop/                 # Minikube Helm chart (API + in-chart Postgres)
+  jenkins/
+    Jenkinsfile              # Declarative pipeline (12 stages)
+    scripts/                 # Thin helpers (Trivy summary, SBOM fallback)
+  security/
+    .gitleaks.toml           # Secrets scan config + demo allowlist
+    .checkov.yaml            # IaC scan config (hard-fail HIGH+)
+    checkov/baseline.md      # Skipped-check rationale
+    policies/README.md       # Hard gates & thresholds
+  newman/
+    shop-api.postman_collection.json
 ```
 
-## Prerequisites
+## Phase 4 — Jenkins pipeline
 
-- Minikube
-- Helm 3
-- Docker (to build the API image)
-- Ingress addon (nginx)
+### Stages
 
-## Build / load the API image
+| # | Stage | Hard gate? | Notes |
+|---|-------|------------|-------|
+| 1 | Checkout | — | SCM + short SHA tag |
+| 2 | Lint | yes (flake8 / helm / hadolint error) | flake8 app; helm lint; hadolint |
+| 3 | Test | **yes** | pytest + coverage **≥70%** |
+| 4 | Secrets | **yes** | gitleaks detect — fail on findings |
+| 5 | SAST | advisory | SonarQube if `SONAR_HOST_URL`; else **unstable** + WARN (not silent pass) |
+| 6 | Build | yes | `docker build` → `shop-api:${GIT_COMMIT}` (+ BUILD_NUMBER, phase2) |
+| 7 | Container scan | **yes** | Trivy — fail on **CRITICAL** |
+| 8 | IaC scan | **yes** | Checkov on `helm/shop` — fail on **HIGH+** |
+| 9 | SBOM | — | syft → `sbom.json` (fallback script if no syft); optional grype |
+| 10 | Push | skippable | GHCR `ghcr.io/almog975/shop-api:...` when creds present |
+| 11 | Deploy (dev) | skippable | `helm upgrade --install` + `values-dev` when cluster up |
+| 12 | Verify | smoke | Newman/curl vs deploy URL **or** `helm template` smoke |
 
-The chart defaults to `shop-api:phase2`. Build from the app directory and load into Minikube:
+Hard-gate details: [`security/policies/README.md`](security/policies/README.md).
+
+### How to run the Jenkinsfile
+
+1. Install a Jenkins controller (LTS) with the **Pipeline** plugin.
+2. Point a Multibranch Pipeline or Pipeline job at this monorepo; set **Script Path** to:
+   ```
+   devsecops-shop-devops/jenkins/Jenkinsfile
+   ```
+3. Use agent label `any` (or a Docker agent image that already has the tools below on `PATH`).
+4. Build the `phase-4-jenkins-pipeline` branch (or `main` after merge).
+
+Paths inside the Jenkinsfile are relative to the **monorepo root**.
+
+### Credentials & environment
+
+| Name | Type | Purpose |
+|------|------|---------|
+| `ghcr-creds` | Username/password | Docker login to `ghcr.io` (user `almog975`, PAT with `write:packages`) |
+| `GHCR_TOKEN` | Env / secret text | Fallback token if Jenkins credential id missing |
+| `GHCR_USER` | Env | Optional; defaults to `almog975` with token login |
+| `SONAR_HOST_URL` | Env | SonarQube server; **omit** to skip SAST (marks build **UNSTABLE**) |
+| `SONAR_TOKEN` | Secret text | SonarQube auth |
+| Kubeconfig | Agent file / env | Needed for Deploy; Verify falls back to helm template |
+
+### Agent tools (student Jenkins)
+
+Install on the agent (or bake into the agent image) so they are on `PATH`:
+
+| Tool | Used for |
+|------|----------|
+| `docker` | Build / tag / push |
+| `helm` | Lint, deploy, template verify |
+| `python3` + venv | flake8, pytest, helper scripts |
+| `flake8` | App lint (also `pip install` in stage) |
+| `hadolint` | Dockerfile lint |
+| `gitleaks` | Secrets (hard gate) |
+| `trivy` | Image scan (hard gate) |
+| `checkov` | Helm IaC (hard gate) |
+| `syft` | SBOM (fallback script if missing) |
+| `newman` or `npx newman` | API verify |
+| `kubectl` | Deploy / live verify |
+| `sonar-scanner` | Optional SAST |
+| `grype` | Optional SBOM vuln table |
+| `curl` | Health smoke |
+
+### SonarQube note
+
+If `SONAR_HOST_URL` is **not** set, the SAST stage calls Jenkins `unstable()` and prints a clear WARN. That is intentional — do not treat a green build as “SAST passed” without Sonar configured.
+
+Coverage follow-up: the Test stage already enforces `--cov-fail-under=70` via pytest-cov. If an agent cannot install pytest-cov, fall back to `pytest -q` and document the gap — current Jenkinsfile prefers the gate.
+
+## Helm (Phase 3) — quick Minikube
 
 ```bash
-# From monorepo root
-cd ../devsecops-shop-app   # or: cd devsecops-shop-app from FinalProject root
-
-# Option A — Minikube build (preferred when docker points at the Minikube daemon)
-minikube image build -t shop-api:phase2 .
-
-# Option B — local Docker, then load into Minikube
-docker build -t shop-api:phase2 .
-minikube image load shop-api:phase2
-```
-
-Confirm the image is visible to the cluster:
-
-```bash
-minikube image ls | grep shop-api
-```
-
-## Minikube install (copy-paste)
-
-```bash
-minikube start
-minikube addons enable ingress
-# build/load image from ../devsecops-shop-app (see above)
+# From monorepo root / this directory
+minikube start && minikube addons enable ingress
+# build/load image from ../devsecops-shop-app
 helm upgrade --install shop ./helm/shop -f helm/shop/values-dev.yaml -n shop --create-namespace
-```
-
-Map the Ingress host (after install):
-
-```bash
 echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
 curl -s http://shop.local/health
-curl -s http://shop.local/ready
-curl -s http://shop.local/api/security/sbom | head
 ```
 
-## Smoke-render without a cluster
+Smoke-render without a cluster:
 
 ```bash
 helm template shop ./helm/shop -f helm/shop/values-dev.yaml -n shop
 ```
 
-## Security artifacts in the chart
-
-Sample `files/sbom.json` and `files/scan-report.json` are packaged into a ConfigMap and mounted read-only at `/artifacts` so `GET /api/security/sbom` and `GET /api/security/scan-report` work with `source: "file"` on Minikube demos (same filenames the app expects under `SECURITY_ARTIFACTS_DIR`).
-
-To use an empty volume instead (pipeline drops files later), set in values:
-
-```yaml
-api:
-  securityArtifacts:
-    source: emptyDir
-```
-
-## Useful commands
+## Newman (local)
 
 ```bash
-kubectl -n shop get pods,svc,ingress
-kubectl -n shop logs -l app.kubernetes.io/component=api -f
-helm uninstall shop -n shop
+# API up on localhost:5000 (compose or port-forward)
+newman run newman/shop-api.postman_collection.json --env-var baseUrl=http://localhost:5000
+# or: npx newman run ...
 ```
 
-## Out of scope (later phases)
+Collection covers: `/health`, `/ready`, products CRUD, cart, orders, `GET /api/security/sbom`, `GET /api/security/scan-report`.
 
-- Jenkins CI/CD
-- Terraform
-- Prometheus / Grafana stack
-- NetworkPolicy (skipped for v1)
+## Local pipeline-ish checks (no Jenkins)
+
+```bash
+# From monorepo root
+cd devsecops-shop-app && python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt flake8
+flake8 app wsgi.py --max-line-length=100
+pytest -q --cov=app --cov-fail-under=70
+cd ..
+helm lint devsecops-shop-devops/helm/shop -f devsecops-shop-devops/helm/shop/values-dev.yaml
+# if installed:
+gitleaks detect --source . --config devsecops-shop-devops/security/.gitleaks.toml
+checkov -d devsecops-shop-devops/helm/shop --framework helm \
+  --config-file devsecops-shop-devops/security/.checkov.yaml
+```
