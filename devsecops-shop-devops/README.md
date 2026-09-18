@@ -1,5 +1,7 @@
 # DevSecOps Shop — DevOps (Phase 3 + Phase 5)
 
+Presenter runbook (all phases): [`../DEMO.md`](../DEMO.md).
+
 Helm chart for deploying the shop API + Postgres on **Minikube** (Phase 3), plus **Terraform + Prometheus/Grafana/Loki monitoring** (Phase 5).
 
 Jenkins CI/CD (Phase 4) may live in sibling dirs / a separate PR (`jenkins/`, `security/`, `newman/`) and is **not required** to run Phase 3 or Phase 5 from `main`.
@@ -151,5 +153,6 @@ Optional later: a Jenkins stage could deploy or smoke-check this stack — **not
 ## Out of scope
 
 - Multi-cloud Terraform, Vault, paid APM
-- Phase 6 demo runbook
 - NetworkPolicy (skipped for Helm v1)
+
+Phase 6 demo runbook: [`../DEMO.md`](../DEMO.md).
