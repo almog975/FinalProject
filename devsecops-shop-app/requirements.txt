@@ -1,0 +1,12 @@
+Flask==3.0.3
+Flask-RESTful==0.3.10
+Flask-Migrate==4.0.7
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.13
+prometheus-client==0.21.1
+python-dotenv==1.0.1
+Werkzeug==3.0.4
+# NOTE: prometheus-flask-instrumentator on PyPI is currently 4.1.1 (Flask<2 only).
+# Phase 1 ships app/instrumentator.py (prometheus_client) with the same API.
+# Prefer re-adding prometheus-flask-instrumentator when a Flask-3 build is published.
