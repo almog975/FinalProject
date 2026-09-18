@@ -131,6 +131,16 @@ curl -s http://shop.local/api/security/sbom | head
 kubectl -n shop get pods,svc,ingress
 ```
 
+**Shop UI (Flask-served SPA):** after rebuilding/redeploying the API image with the frontend stage, open the same URL in a browser:
+
+```bash
+minikube service shop -n shop --url
+# open the printed URL — UI at /, API at /api, /health, /ready
+```
+
+Local Compose + Vite: `cd devsecops-shop-app/frontend && npm run dev` (API via `docker compose up`).
+
+
 Smoke-render **without** a cluster:
 
 ```bash

@@ -12,6 +12,7 @@ from app.api.security import ScanReportResource, SbomResource
 from app.config import get_config
 from app.extensions import db, migrate
 from app.cli import register_cli
+from app.frontend import register_frontend
 from app.instrumentator import Instrumentator
 
 
@@ -60,5 +61,8 @@ def create_app(config_name: str | None = None) -> Flask:
         db.create_all()
 
     register_cli(flask_app)
+
+    # SPA last — must not shadow /api, /health, /ready, /metrics
+    register_frontend(flask_app)
 
     return flask_app

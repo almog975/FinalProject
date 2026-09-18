@@ -10,14 +10,35 @@ Phase 2: security report endpoints that serve the latest SBOM and vulnerability 
 ## Layout
 
 ```
-app/           # create_app factory, models, API, services, CLI
+app/           # create_app factory, models, API, services, CLI, SPA static
+frontend/      # Vite + React + TypeScript SPA (served from dist by Flask)
 samples/       # bundled demo SBOM + scan-report (compose works without a pipeline)
 tests/         # pytest suite
-Dockerfile     # multi-stage, python:3.11.9-slim
+Dockerfile     # multi-stage: Node SPA build + python:3.11.9-slim runtime
 docker-compose.yml
 requirements.txt
 requirements-dev.txt
 ```
+
+## Frontend (React SPA)
+
+Vite + React + TypeScript UI under `frontend/`. **Delivered via Flask** (same origin): `npm run build` → `frontend/dist`, served by the API process. No separate nginx / shop-web Deployment is required for Helm.
+
+### Local UI against Compose
+
+```bash
+# Terminal 1 — API
+docker compose up --build
+
+# Terminal 2 — Vite (proxies to :5000)
+cd frontend && npm install && npm run dev
+```
+
+### Production / image
+
+The multi-stage `Dockerfile` builds the SPA with Node, then copies `dist` into `/app/frontend/dist`. After rebuild/redeploy, open the shop service URL in a browser (root `/` serves the UI; `/api/*` unchanged).
+
+Details: [`frontend/README.md`](frontend/README.md).
 
 ## Quick start (Docker Compose)
 
