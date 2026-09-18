@@ -39,6 +39,9 @@ cd ../devsecops-shop-devops
 helm upgrade --install shop ./helm/shop -f helm/shop/values-dev.yaml -n shop --create-namespace
 echo "$(minikube ip) shop.local"   # add to /etc/hosts with sudo
 curl -s http://shop.local/health
+# UI dashboard (same origin as API):
+minikube service shop -n shop --url
+# Open printed URL → /  (Overview | Products | Cart | Orders | Security | System)
 cd ..
 
 # --- Phase 4: Jenkins (document / configure) ---

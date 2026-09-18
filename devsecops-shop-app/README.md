@@ -20,9 +20,9 @@ requirements.txt
 requirements-dev.txt
 ```
 
-## Frontend (React SPA)
+## Frontend (React admin dashboard)
 
-Vite + React + TypeScript UI under `frontend/`. **Delivered via Flask** (same origin): `npm run build` → `frontend/dist`, served by the API process. No separate nginx / shop-web Deployment is required for Helm.
+Vite + React + TypeScript **admin dashboard** under `frontend/` (Overview, Products, Cart, Orders, Security, System). **Delivered via Flask** (same origin): `npm run build` → `frontend/dist`, served by the API process. No separate nginx / shop-web Deployment — not a microservices split.
 
 ### Local UI against Compose
 
@@ -30,15 +30,23 @@ Vite + React + TypeScript UI under `frontend/`. **Delivered via Flask** (same or
 # Terminal 1 — API
 docker compose up --build
 
-# Terminal 2 — Vite (proxies to :5000)
+# Terminal 2 — Vite (proxies /api, /health, /ready, /metrics → :5000)
 cd frontend && npm install && npm run dev
 ```
 
-### Production / image
+### Production / Minikube rebuild
 
-The multi-stage `Dockerfile` builds the SPA with Node, then copies `dist` into `/app/frontend/dist`. After rebuild/redeploy, open the shop service URL in a browser (root `/` serves the UI; `/api/*` unchanged).
+The multi-stage `Dockerfile` builds the SPA with Node, then copies `dist` into `/app/frontend/dist`. Flask serves `/` (and client-route fallback). After rebuild/redeploy:
 
-Details: [`frontend/README.md`](frontend/README.md).
+```bash
+minikube image build -t shop-api:phase2 .
+kubectl -n shop rollout restart deploy/shop
+# or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
+#       -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop
+minikube service shop -n shop --url
+```
+
+Open the printed URL (UI at `/`; `/api/*` unchanged). Details: [`frontend/README.md`](frontend/README.md).
 
 ## Quick start (Docker Compose)
 
