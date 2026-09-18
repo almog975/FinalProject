@@ -11,6 +11,7 @@ from app.api.products import ProductListResource, ProductResource
 from app.api.security import ScanReportResource, SbomResource
 from app.config import get_config
 from app.extensions import db, migrate
+from app.cli import register_cli
 from app.instrumentator import Instrumentator
 
 
@@ -57,5 +58,7 @@ def create_app(config_name: str | None = None) -> Flask:
 
     with flask_app.app_context():
         db.create_all()
+
+    register_cli(flask_app)
 
     return flask_app

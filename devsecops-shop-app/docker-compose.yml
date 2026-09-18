@@ -25,6 +25,10 @@ services:
       FLASK_ENV: development
       SECRET_KEY: compose-dev-secret
       DATABASE_URL: postgresql://shop:shop@postgres:5432/shopdb
+      # Pipeline (or local) can mount Syft/Trivy output here; samples/ used if empty
+      SECURITY_ARTIFACTS_DIR: /artifacts
+    volumes:
+      - security-artifacts:/artifacts
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,3 +41,4 @@ services:
 
 volumes:
   pgdata:
+  security-artifacts:

@@ -1,13 +1,17 @@
 # DevSecOps Shop App
 
-Flask e-commerce REST API for Technion DevOps Final Project 15 (Phase 1 scaffold).
+Flask e-commerce REST API for Technion DevOps Final Project 15.
 
 Stack: Flask + Flask-RESTful + Flask-Migrate + Flask-SQLAlchemy, PostgreSQL 15+, Prometheus metrics, Docker multi-stage build.
+
+Phase 1: products / cart / orders.  
+Phase 2: security report endpoints that serve the latest SBOM and vulnerability scan summary.
 
 ## Layout
 
 ```
-app/           # create_app factory, models, API, services
+app/           # create_app factory, models, API, services, CLI
+samples/       # bundled demo SBOM + scan-report (compose works without a pipeline)
 tests/         # pytest suite
 Dockerfile     # multi-stage, python:3.11.9-slim
 docker-compose.yml
@@ -24,6 +28,8 @@ docker compose up --build
 
 API listens on `http://localhost:5000`. Postgres is exposed on `5432`.
 
+Security endpoints return bundled `samples/` JSON until a pipeline (or `flask security-ingest`) provides real artifacts.
+
 ## Run tests (no Docker required)
 
 ```bash
@@ -34,6 +40,66 @@ pytest
 ```
 
 Tests use an in-memory SQLite database when `DATABASE_URL` is unset.
+
+## Security artifacts (Phase 2)
+
+### Endpoints
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/security/sbom` | Latest SBOM (200 + JSON envelope) |
+| GET | `/api/security/scan-report` | Latest vuln summary (200 + JSON envelope) |
+
+Response envelope:
+
+```json
+{
+  "source": "file|db|samples",
+  "kind": "sbom|scan",
+  "path": "/artifacts/sbom.json",
+  "created_at": "2026-09-18T12:00:00+00:00",
+  "artifact": { }
+}
+```
+
+`artifact` is the raw Syft/Trivy (or sample) JSON document.
+
+### Resolution order
+
+1. **`SECURITY_ARTIFACTS_DIR`** — files named `sbom.json` and `scan-report.json`
+2. **DB table `security_artifacts`** — latest row per `kind` (`sbom` | `scan`)
+3. **Bundled `samples/`** — always present for local demo / compose without CI
+
+### Artifact paths (for future Jenkins)
+
+Set `SECURITY_ARTIFACTS_DIR` (Compose/Dockerfile default: `/artifacts`) and drop pipeline output there:
+
+```bash
+# After image build / scan stages (examples)
+syft packages dir:. -o cyclonedx-json > "$SECURITY_ARTIFACTS_DIR/sbom.json"
+trivy image --format json --output "$SECURITY_ARTIFACTS_DIR/scan-report.json" "$IMAGE"
+```
+
+Mount the same directory into the API pod/container (Compose already uses volume `security-artifacts` → `/artifacts`). The next `GET` will pick up `source: "file"`.
+
+### Ingest (CLI)
+
+Prefer the Flask CLI when copying artifacts into the DB (and optionally mirroring into `SECURITY_ARTIFACTS_DIR`):
+
+```bash
+export FLASK_APP=wsgi:app
+# optional: export SECURITY_ARTIFACTS_DIR=/artifacts
+
+flask security-ingest sbom /path/to/sbom.json
+flask security-ingest scan /path/to/scan-report.json
+# aliases for scan: scan-report
+```
+
+In Docker Compose:
+
+```bash
+docker compose exec api flask security-ingest sbom /artifacts/sbom.json
+```
 
 ## Example curls
 
@@ -70,9 +136,9 @@ curl -s -X POST http://localhost:5000/api/orders \
 
 curl -s http://localhost:5000/api/orders/1
 
-# Security stubs (Phase 2)
-curl -s http://localhost:5000/api/security/sbom
-curl -s http://localhost:5000/api/security/scan-report
+# Security reports (Phase 2 — samples until pipeline drops files)
+curl -s http://localhost:5000/api/security/sbom | jq .
+curl -s http://localhost:5000/api/security/scan-report | jq .
 ```
 
 ## API summary
@@ -91,8 +157,8 @@ curl -s http://localhost:5000/api/security/scan-report
 | GET | `/health` | Liveness |
 | GET | `/ready` | Readiness (DB ping) |
 | GET | `/metrics` | Prometheus |
-| GET | `/api/security/sbom` | Stub (404 + TODO) |
-| GET | `/api/security/scan-report` | Stub (404 + TODO) |
+| GET | `/api/security/sbom` | Latest SBOM JSON envelope |
+| GET | `/api/security/scan-report` | Latest vuln scan summary envelope |
 
 ## Local run without Docker
 

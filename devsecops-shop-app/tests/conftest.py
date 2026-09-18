@@ -7,6 +7,7 @@ import pytest
 os.environ["FLASK_ENV"] = "testing"
 os.environ.pop("DATABASE_URL", None)
 os.environ.pop("TEST_DATABASE_URL", None)
+os.environ.pop("SECURITY_ARTIFACTS_DIR", None)
 
 from app import create_app
 from app.extensions import db
