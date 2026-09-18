@@ -4,7 +4,7 @@ api:
   image:
     repository: shop-api
     tag: phase2
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     type: NodePort
     port: 5000

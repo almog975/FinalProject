@@ -21,10 +21,25 @@ spec:
         checksum/security-artifacts: {{ include (print $.Template.BasePath "/configmap-security-artifacts.yaml") . | sha256sum }}
         {{- end }}
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 10001
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port }}
@@ -34,14 +49,16 @@ spec:
                 name: {{ include "shop.fullname" . }}-config
             - secretRef:
                 name: {{ include "shop.fullname" . }}-secret
-          {{- if .Values.api.securityArtifacts.enabled }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.api.securityArtifacts.enabled }}
             - name: security-artifacts
               mountPath: {{ .Values.api.securityArtifacts.mountPath }}
               {{- if eq .Values.api.securityArtifacts.source "configmap" }}
               readOnly: true
               {{- end }}
-          {{- end }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.api.probes.liveness.path }}
@@ -60,8 +77,10 @@ spec:
             failureThreshold: {{ .Values.api.probes.readiness.failureThreshold }}
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
-      {{- if .Values.api.securityArtifacts.enabled }}
       volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.api.securityArtifacts.enabled }}
         - name: security-artifacts
           {{- if eq .Values.api.securityArtifacts.source "configmap" }}
           configMap:
@@ -69,4 +88,4 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
-      {{- end }}
+        {{- end }}

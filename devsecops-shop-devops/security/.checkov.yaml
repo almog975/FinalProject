@@ -9,6 +9,10 @@ skip-check:
   # Student Minikube chart: no NetworkPolicy / PodSecurity in v1 (documented)
   - CKV_K8S_21   # default namespace — we deploy to shop ns via helm -n
   - CKV2_K8S_6   # NetworkPolicy — out of scope Phase 3/4
+  - CKV_K8S_35   # secrets as env — needed for official postgres image (POSTGRES_*)
+  - CKV_K8S_43   # image digest — Minikube local tags (shop-api:phase2) have no digest
+  - CKV_K8S_40   # UID≥10000 — official postgres image runs as 999
+  - CKV_K8S_22   # readOnlyRootFilesystem — postgres needs writable FS for data dir
 soft-fail-on:
   - LOW
   - MEDIUM

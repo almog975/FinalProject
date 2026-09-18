@@ -8,7 +8,7 @@ api:
   image:
     repository: shop-api
     tag: phase2
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     type: ClusterIP
     port: 5000
@@ -47,7 +47,7 @@ postgres:
   image:
     repository: postgres
     tag: "15.8-alpine"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     port: 5432
   # emptyDir is enough for Minikube demos; set persistence.enabled for PVC
