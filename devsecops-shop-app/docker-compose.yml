@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:15.8-alpine
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop
+      POSTGRES_DB: shopdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shopdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: development
+      SECRET_KEY: compose-dev-secret
+      DATABASE_URL: postgresql://shop:shop@postgres:5432/shopdb
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  pgdata:
