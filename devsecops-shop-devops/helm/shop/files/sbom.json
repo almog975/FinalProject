@@ -1,0 +1,35 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:00000000-0000-4000-8000-000000000001",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-18T12:00:00Z",
+    "tools": [
+      {
+        "vendor": "Anchore",
+        "name": "syft",
+        "version": "1.0.0-sample"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "devsecops-shop-app",
+      "version": "0.1.0-sample"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "Flask",
+      "version": "3.0.3",
+      "purl": "pkg:pypi/flask@3.0.3"
+    },
+    {
+      "type": "library",
+      "name": "SQLAlchemy",
+      "version": "2.0.35",
+      "purl": "pkg:pypi/sqlalchemy@2.0.35"
+    }
+  ]
+}

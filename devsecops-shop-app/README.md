@@ -95,11 +95,18 @@ flask security-ingest scan /path/to/scan-report.json
 # aliases for scan: scan-report
 ```
 
-In Docker Compose:
+**Host-side caveat:** running `flask security-ingest` on the host needs a reachable `DATABASE_URL`.
+The Compose hostname `postgres` only resolves **inside** the compose network, so a host shell with
+`DATABASE_URL=...@postgres:5432/...` (from `.env.example`) will fail DNS. Prefer ingesting inside
+the API container for local demos:
 
 ```bash
 docker compose exec api flask security-ingest sbom /artifacts/sbom.json
+docker compose exec api flask security-ingest scan /artifacts/scan-report.json
 ```
+
+If you must run on the host, point `DATABASE_URL` at `localhost` (Compose publishes Postgres on `5432`)
+or another reachable address — not the compose service name.
 
 ## Example curls
 

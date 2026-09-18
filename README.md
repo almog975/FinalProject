@@ -2,4 +2,5 @@
 
 Technion DevOps Final Project 15 — DevSecOps Pipeline with Full Security Scanning.
 
-Application code lives in [`devsecops-shop-app/`](devsecops-shop-app/).
+- Application: [`devsecops-shop-app/`](devsecops-shop-app/)
+- DevOps / Helm (Phase 3): [`devsecops-shop-devops/`](devsecops-shop-devops/)
