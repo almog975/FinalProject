@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (gitignored locally) or pass: terraform plan -var-file=envs/dev/terraform.tfvars
+#
+# Defaults are safe: no cloud bills, no cluster writes until you opt in.
+
+enable_cloud      = false
+enable_monitoring = false   # set true only with Minikube (or any kubecontext) running
+
+# kubeconfig_path = "~/.kube/config"
+# kube_context    = "minikube"
+# monitoring_namespace = "monitoring"
+# shop_namespace       = "shop"
+# shop_release_name    = "shop"

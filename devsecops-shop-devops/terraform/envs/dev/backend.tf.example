@@ -1,0 +1,12 @@
+# Optional explicit local backend. Default Terraform already uses local state
+# under terraform.tfstate in the working directory — no remote / no cloud bill.
+#
+# Usage (from terraform/):
+#   cp envs/dev/backend.tf.example backend.tf
+#   terraform init
+
+terraform {
+  backend "local" {
+    path = "envs/dev/terraform.tfstate"
+  }
+}
