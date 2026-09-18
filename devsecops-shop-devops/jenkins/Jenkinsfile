@@ -20,6 +20,8 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  # Keep requests tiny: 1-node Minikube also runs jenkins-0 (+ shop).
+  # Run only ONE build at a time on student Minikube (disableConcurrentBuilds).
   containers:
   - name: python
     image: python:3.11-slim
@@ -27,19 +29,21 @@ spec:
     tty: true
     resources:
       requests:
-        cpu: "100m"
+        cpu: "50m"
         memory: "256Mi"
       limits:
-        memory: "768Mi"
+        cpu: "500m"
+        memory: "512Mi"
   - name: gitleaks
     image: zricethezav/gitleaks:v8.18.4
     command: [cat]
     tty: true
     resources:
       requests:
-        cpu: "50m"
-        memory: "64Mi"
+        cpu: "25m"
+        memory: "128Mi"
       limits:
+        cpu: "200m"
         memory: "256Mi"
   - name: checkov
     image: bridgecrew/checkov:3.2.257
@@ -47,19 +51,21 @@ spec:
     tty: true
     resources:
       requests:
-        cpu: "100m"
-        memory: "256Mi"
+        cpu: "25m"
+        memory: "128Mi"
       limits:
-        memory: "768Mi"
+        cpu: "500m"
+        memory: "512Mi"
   - name: trivy
     image: aquasec/trivy:0.56.2
     command: [cat]
     tty: true
     resources:
       requests:
-        cpu: "50m"
+        cpu: "25m"
         memory: "128Mi"
       limits:
+        cpu: "500m"
         memory: "512Mi"
   - name: helm
     image: alpine/helm:3.16.2
@@ -67,9 +73,10 @@ spec:
     tty: true
     resources:
       requests:
-        cpu: "50m"
-        memory: "64Mi"
+        cpu: "25m"
+        memory: "128Mi"
       limits:
+        cpu: "200m"
         memory: "256Mi"
 '''
     }
@@ -77,6 +84,7 @@ spec:
 
   options {
     // timestamps() requires the Timestamper plugin — omit for stock Jenkins.
+    // Student Minikube: run only ONE build at a time (CPU/memory).
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
