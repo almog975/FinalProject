@@ -28,6 +28,10 @@ These gates **must fail** the Jenkins build (exit non-zero). Soft/advisory stage
 - **Checkov**: hard-fail HIGH+; soft-fail LOW/MEDIUM
 - **Gitleaks**: zero tolerance (allowlist only for demo placeholders — see `.gitleaks.toml`)
 
+## Checkov intentional skips (Helm chart)
+
+Documented skips in `security/.checkov.yaml` (not a global soft-fail): **CKV_K8S_21** / **CKV2_K8S_6** (NetworkPolicy / default-ns out of scope for Minikube v1), **CKV_K8S_35** (POSTGRES_* via secretKeyRef required by official postgres), **CKV_K8S_43** (local Minikube image tags without digests), **CKV_K8S_40** (postgres UID 999), and **CKV_K8S_22** (postgres needs a writable root FS). API pods are hardened to UID 10001 with read-only root + `/tmp` emptyDir.
+
 ## Local reproduction
 
 ```bash

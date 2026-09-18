@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Stage 3: runtime
+# Stage 3: runtime (non-root UID 10001 for Checkov CKV_K8S_40 / K8S hardening)
 FROM python:3.11.9-slim AS runtime
 
 WORKDIR /app
@@ -32,9 +32,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --shell /bin/bash appuser \
-    && mkdir -p /artifacts /app/frontend/dist \
-    && chown appuser:appuser /artifacts /app/frontend/dist
+    && groupadd -g 10001 appuser \
+    && useradd -u 10001 -g 10001 --create-home --shell /bin/bash appuser \
+    && mkdir -p /artifacts /app/frontend/dist /tmp \
+    && chown -R 10001:10001 /artifacts /app /tmp
 
 COPY --from=builder /install /usr/local
 COPY app/ ./app/
@@ -42,13 +43,15 @@ COPY samples/ ./samples/
 COPY wsgi.py .
 COPY --from=frontend /frontend/dist ./frontend/dist
 
+RUN chown -R 10001:10001 /app /artifacts
+
 ENV FLASK_APP=wsgi:app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     SECURITY_ARTIFACTS_DIR=/artifacts \
     FRONTEND_DIST=/app/frontend/dist
 
-USER appuser
+USER 10001
 
 EXPOSE 5000
 
