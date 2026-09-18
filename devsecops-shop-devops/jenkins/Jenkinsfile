@@ -1,10 +1,12 @@
 // Phase 4 — Declarative Jenkins pipeline for DevSecOps Shop (monorepo)
 // Runs on a Kubernetes pod agent with tool sidecars (no tools required on JNLP).
+// No docker.sock hostPath — Minikube Windows has no /var/run/docker.sock on the node;
+// a Socket hostPath would block the ENTIRE pod at ContainerCreating.
 // Requires Jenkins Kubernetes plugin + a configured cloud (Minikube Jenkins chart OK).
 // Do NOT add a jnlp container here — the plugin injects it.
 //
 // Credentials / env:
-//   GHCR_TOKEN or usernamePassword 'ghcr-creds'  — push to ghcr.io/almog975/shop-api
+//   GHCR_TOKEN or usernamePassword 'ghcr-creds'  — push (skipped without image/docker)
 //   SONAR_HOST_URL, SONAR_TOKEN                   — SonarQube SAST (skip → unstable if unset)
 //
 // Hard gates (when tools run): gitleaks findings, Trivy CRITICAL (if image built),
@@ -25,38 +27,50 @@ spec:
     tty: true
     resources:
       requests:
-        cpu: "200m"
-        memory: "512Mi"
+        cpu: "100m"
+        memory: "256Mi"
       limits:
-        memory: "1Gi"
+        memory: "768Mi"
   - name: gitleaks
     image: zricethezav/gitleaks:v8.18.4
     command: [cat]
     tty: true
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        memory: "256Mi"
   - name: checkov
     image: bridgecrew/checkov:3.2.257
     command: [cat]
     tty: true
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        memory: "768Mi"
   - name: trivy
     image: aquasec/trivy:0.56.2
     command: [cat]
     tty: true
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "128Mi"
+      limits:
+        memory: "512Mi"
   - name: helm
     image: alpine/helm:3.16.2
     command: [cat]
     tty: true
-  - name: docker
-    image: docker:27-cli
-    command: [cat]
-    tty: true
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run/docker.sock
-  volumes:
-  - name: docker-sock
-    hostPath:
-      path: /var/run/docker.sock
-      type: Socket
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        memory: "256Mi"
 '''
     }
   }
@@ -174,31 +188,10 @@ spec:
     stage('Build') {
       steps {
         script {
-          def dockerOk = false
-          container('docker') {
-            dockerOk = sh(
-              script: 'docker info >/dev/null 2>&1',
-              returnStatus: true
-            ) == 0
-            if (dockerOk) {
-              dir("${APP_DIR}") {
-                sh '''
-                  set -e
-                  docker build \
-                    -t ${IMAGE_NAME}:${IMAGE_TAG} \
-                    -t ${IMAGE_NAME}:${BUILD_NUMBER} \
-                    -t ${IMAGE_NAME}:phase2 \
-                    .
-                '''
-              }
-              env.IMAGE_BUILT = 'true'
-              echo "Docker image built: ${IMAGE_NAME}:${IMAGE_TAG}"
-            } else {
-              echo 'WARN: docker info failed (no usable /var/run/docker.sock on this agent) — skipping Build/Trivy/Push'
-              unstable('Docker socket unavailable — image build skipped')
-              env.IMAGE_BUILT = 'false'
-            }
-          }
+          // No docker sidecar / hostPath sock (breaks Minikube Windows agent pods).
+          echo 'WARN: Docker build not available in this agent pod (no docker.sock mount) — skipping Build/Trivy/Push'
+          unstable('Docker unavailable on Minikube agent pod — image build skipped')
+          env.IMAGE_BUILT = 'false'
         }
       }
     }
@@ -253,7 +246,6 @@ spec:
         container('python') {
           sh '''
             set -e
-            # syft not in the default pod — use pip-freeze / CycloneDX-ish fallback
             python "${DEVOPS_DIR}/jenkins/scripts/sbom_fallback.py" "${APP_DIR}" "${SBOM_FILE}"
             ls -la ${SBOM_FILE}
           '''
@@ -266,52 +258,7 @@ spec:
         expression { return env.IMAGE_BUILT == 'true' }
       }
       steps {
-        script {
-          def pushed = false
-          try {
-            withCredentials([
-              usernamePassword(
-                credentialsId: 'ghcr-creds',
-                usernameVariable: 'GHCR_USER',
-                passwordVariable: 'GHCR_PASS'
-              )
-            ]) {
-              container('docker') {
-                sh '''
-                  set -e
-                  echo "${GHCR_PASS}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
-                  docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${IMAGE_TAG}
-                  docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${BUILD_NUMBER}
-                  docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:phase2
-                  docker push ${GHCR_IMAGE}:${IMAGE_TAG}
-                  docker push ${GHCR_IMAGE}:${BUILD_NUMBER}
-                  docker push ${GHCR_IMAGE}:phase2
-                '''
-              }
-              pushed = true
-            }
-          } catch (ignored) {
-            echo "INFO: Jenkins credential 'ghcr-creds' not available — trying GHCR_TOKEN env"
-          }
-          if (!pushed && env.GHCR_TOKEN?.trim()) {
-            container('docker') {
-              sh '''
-                set -e
-                echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER:-almog975}" --password-stdin
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${IMAGE_TAG}
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:${BUILD_NUMBER}
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${GHCR_IMAGE}:phase2
-                docker push ${GHCR_IMAGE}:${IMAGE_TAG}
-                docker push ${GHCR_IMAGE}:${BUILD_NUMBER}
-                docker push ${GHCR_IMAGE}:phase2
-              '''
-            }
-            pushed = true
-          }
-          if (!pushed) {
-            echo 'WARN: GHCR credentials not configured (ghcr-creds / GHCR_TOKEN) — skipping push'
-          }
-        }
+        echo 'Push skipped unless IMAGE_BUILT=true (requires docker, not mounted on this agent).'
       }
     }
 
@@ -319,7 +266,6 @@ spec:
       steps {
         container('helm') {
           script {
-            // In-cluster SA: try a cheap helm list; skip if API unreachable.
             def kubeOk = sh(
               script: 'helm list -A >/dev/null 2>&1',
               returnStatus: true
@@ -376,7 +322,7 @@ spec:
       echo "Pipeline succeeded — image ${IMAGE_NAME}:${IMAGE_TAG} (IMAGE_BUILT=${IMAGE_BUILT})"
     }
     unstable {
-      echo 'Pipeline UNSTABLE (e.g. SonarQube skipped and/or Docker socket missing). Hard gates for stages that ran still passed.'
+      echo 'Pipeline UNSTABLE (SonarQube skipped and/or Docker unavailable). Hard gates for stages that ran still passed.'
     }
     failure {
       echo 'Pipeline FAILED — check hard gates: secrets / Trivy CRITICAL / Checkov HIGH / pytest'
