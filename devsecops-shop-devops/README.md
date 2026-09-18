@@ -1,25 +1,99 @@
-# DevSecOps Shop — DevOps
+# DevSecOps Shop — DevOps (Phases 3–5)
 
-Helm chart (Phase 3) + **Jenkins CI/CD pipeline** (Phase 4) for the shop API.
+Presenter runbook (all phases): [`../DEMO.md`](../DEMO.md).
 
-Out of scope here: Terraform, Prometheus/Grafana stack.
+Helm chart for Minikube (Phase 3), **Jenkins CI/CD with hard gates** (Phase 4), and **Terraform + Prometheus/Grafana/Loki** (Phase 5).
 
 ## Layout
 
 ```
 devsecops-shop-devops/
-  helm/shop/                 # Minikube Helm chart (API + in-chart Postgres)
-  jenkins/
-    Jenkinsfile              # Declarative pipeline (12 stages)
-    scripts/                 # Thin helpers (Trivy summary, SBOM fallback)
-  security/
-    .gitleaks.toml           # Secrets scan config + demo allowlist
-    .checkov.yaml            # IaC scan config (hard-fail HIGH+)
-    checkov/baseline.md      # Skipped-check rationale
-    policies/README.md       # Hard gates & thresholds
-  newman/
-    shop-api.postman_collection.json
+  helm/shop/                 # Minikube Helm chart (API + in-chart Postgres) — Phase 3
+  jenkins/                   # Declarative Jenkinsfile + helper scripts — Phase 4
+  security/                  # gitleaks / checkov / policies — Phase 4
+  newman/                    # Postman collection — Phase 4
+  terraform/                 # Local/Minikube Terraform (no cloud bills by default) — Phase 5
+  monitoring/                # kube-prometheus-stack + Loki values + Grafana dashboard — Phase 5
 ```
+
+---
+
+## Phase 3 — Helm (Minikube)
+
+### Why in-chart Postgres (not Bitnami)
+
+v1 ships a simple Postgres `Deployment` + `Service` + optional PVC / `emptyDir` inside this chart.
+
+- Fewer moving parts for student Minikube demos
+- No external chart repository pull (works offline / air-gapped)
+- Placeholders only for DB credentials — override via values / `--set` for anything beyond local demo
+
+### Prerequisites
+
+- Minikube
+- Helm 3
+- Docker (to build the API image)
+- Ingress addon (nginx)
+
+### Build / load the API image
+
+The chart defaults to `shop-api:phase2`. Build from the app directory and load into Minikube:
+
+```bash
+# From monorepo root
+cd ../devsecops-shop-app   # or: cd devsecops-shop-app from FinalProject root
+
+# Option A — Minikube build (preferred when docker points at the Minikube daemon)
+minikube image build -t shop-api:phase2 .
+
+# Option B — local Docker, then load into Minikube
+docker build -t shop-api:phase2 .
+minikube image load shop-api:phase2
+```
+
+Confirm the image is visible to the cluster:
+
+```bash
+minikube image ls | grep shop-api
+```
+
+### Minikube install (copy-paste)
+
+```bash
+minikube start
+minikube addons enable ingress
+# build/load image from ../devsecops-shop-app (see above)
+helm upgrade --install shop ./helm/shop -f helm/shop/values-dev.yaml -n shop --create-namespace
+```
+
+Map the Ingress host (after install):
+
+```bash
+echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
+curl -s http://shop.local/health
+curl -s http://shop.local/ready
+curl -s http://shop.local/api/security/sbom | head
+```
+
+### Smoke-render without a cluster
+
+```bash
+helm template shop ./helm/shop -f helm/shop/values-dev.yaml -n shop
+```
+
+### Security artifacts in the chart
+
+Sample SBOM + scan-report JSON under `helm/shop/files/` are mounted into the API so `/api/security/*` works in demos.
+
+### Useful commands
+
+```bash
+kubectl -n shop get pods,svc,ingress
+kubectl -n shop logs -l app.kubernetes.io/component=api -f
+helm uninstall shop -n shop
+```
+
+---
 
 ## Phase 4 — Jenkins pipeline
 
@@ -50,7 +124,7 @@ Hard-gate details: [`security/policies/README.md`](security/policies/README.md).
    devsecops-shop-devops/jenkins/Jenkinsfile
    ```
 3. Use agent label `any` (or a Docker agent image that already has the tools below on `PATH`).
-4. Build the `phase-4-jenkins-pipeline` branch (or `main` after merge).
+4. Build the `main` branch.
 
 Paths inside the Jenkinsfile are relative to the **monorepo root**.
 
@@ -92,23 +166,6 @@ If `SONAR_HOST_URL` is **not** set, the SAST stage calls Jenkins `unstable()` an
 
 Coverage follow-up: the Test stage already enforces `--cov-fail-under=70` via pytest-cov. If an agent cannot install pytest-cov, fall back to `pytest -q` and document the gap — current Jenkinsfile prefers the gate.
 
-## Helm (Phase 3) — quick Minikube
-
-```bash
-# From monorepo root / this directory
-minikube start && minikube addons enable ingress
-# build/load image from ../devsecops-shop-app
-helm upgrade --install shop ./helm/shop -f helm/shop/values-dev.yaml -n shop --create-namespace
-echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
-curl -s http://shop.local/health
-```
-
-Smoke-render without a cluster:
-
-```bash
-helm template shop ./helm/shop -f helm/shop/values-dev.yaml -n shop
-```
-
 ## Newman (local)
 
 ```bash
@@ -134,3 +191,68 @@ gitleaks detect --source . --config devsecops-shop-devops/security/.gitleaks.tom
 checkov -d devsecops-shop-devops/helm/shop --framework helm \
   --config-file devsecops-shop-devops/security/.checkov.yaml
 ```
+
+---
+
+## Phase 5 — Terraform + monitoring
+
+Adds a **demo-safe** Terraform stack and Helm values to run Prometheus, Grafana, Alertmanager, Loki, and Promtail on Minikube. Scrapes the Phase 3 shop API at `GET /metrics` (metrics: `flask_http_request_total`, `flask_http_request_duration_seconds`).
+
+| Piece | Path |
+|-------|------|
+| Terraform | [`terraform/`](terraform/) — `enable_cloud=false`, `enable_monitoring=false` by default |
+| Helm values | [`monitoring/kube-prometheus-stack-values.yaml`](monitoring/kube-prometheus-stack-values.yaml), [`monitoring/loki-values.yaml`](monitoring/loki-values.yaml) |
+| Grafana dashboard | [`monitoring/grafana/dashboards/shop-api.json`](monitoring/grafana/dashboards/shop-api.json) (“DevSecOps Shop API”) |
+| How-to | [`monitoring/README.md`](monitoring/README.md), [`terraform/README.md`](terraform/README.md) |
+
+### Terraform (validate offline / apply on Minikube)
+
+```bash
+cd terraform
+terraform init -backend=false
+terraform fmt -recursive
+terraform validate
+terraform plan                                    # no cluster writes (enable_monitoring=false)
+
+# With Minikube up and Phase 3 shop installed:
+terraform apply -var='enable_monitoring=true'
+terraform destroy -var='enable_monitoring=true'
+```
+
+### Helm CLI monitoring install (no Terraform required)
+
+```bash
+# From this directory (devsecops-shop-devops)
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring --version 65.1.0 \
+  -f monitoring/kube-prometheus-stack-values.yaml --wait --timeout 15m
+
+helm upgrade --install loki grafana/loki-stack \
+  -n monitoring --version 2.10.2 \
+  -f monitoring/loki-values.yaml --wait --timeout 10m
+
+kubectl -n monitoring create configmap shop-api-dashboard \
+  --from-file=shop-api.json=monitoring/grafana/dashboards/shop-api.json \
+  --dry-run=client -o yaml \
+  | kubectl label --local -f - grafana_dashboard=1 -o yaml \
+  | kubectl apply -f -
+
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+# Grafana: admin / prom-operator (demo only) → dashboard "DevSecOps Shop API"
+```
+
+Optional later: a Jenkins stage could deploy or smoke-check this stack — **not implemented** here.
+
+---
+
+## Out of scope
+
+- Multi-cloud Terraform, Vault, paid APM
+- NetworkPolicy (skipped for Helm v1)
+
+Phase 6 demo runbook: [`../DEMO.md`](../DEMO.md).

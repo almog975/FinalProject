@@ -1,0 +1,108 @@
+# kube-prometheus-stack values for Minikube / Phase 5
+# Chart: prometheus-community/kube-prometheus-stack
+#
+# Scrapes shop-api GET /metrics (prometheus_client instrumentator) in namespace
+# `shop` via additionalServiceMonitors (also set from Terraform when using TF).
+# Phase 3 Helm release name: shop | Ingress host: shop.local
+
+fullnameOverride: ""
+
+# Keep Minikube footprint small
+defaultRules:
+  create: true
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 24h
+    scrapeInterval: 15s
+    # Discover ServiceMonitors / PodMonitors in all namespaces (incl. shop)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorNamespaceSelector: {}
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  # Shop API ServiceMonitor (Phase 3 chart labels)
+  # Service: shop (fullname), labels:
+  #   app.kubernetes.io/name=shop
+  #   app.kubernetes.io/instance=shop
+  #   app.kubernetes.io/component=api
+  # Port name: http (5000)  Path: /metrics
+  additionalServiceMonitors:
+    - name: shop-api
+      namespaceSelector:
+        matchNames:
+          - shop
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: shop
+          app.kubernetes.io/instance: shop
+          app.kubernetes.io/component: api
+      endpoints:
+        - port: http
+          path: /metrics
+          interval: 15s
+          scrapeTimeout: 10s
+
+grafana:
+  enabled: true
+  adminPassword: "prom-operator"   # demo only — change locally; do not use in prod
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki:3100
+      isDefault: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+
+# Node / kubelet rules still useful on Minikube; disable heavy pieces if OOM
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
