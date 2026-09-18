@@ -123,6 +123,7 @@ helm upgrade --install shop ./helm/shop \
 
 # Host mapping
 echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
+# Or without /etc/hosts: minikube service shop -n shop --url
 
 curl -s http://shop.local/health
 curl -s http://shop.local/ready
