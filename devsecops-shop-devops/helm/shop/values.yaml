@@ -1,0 +1,90 @@
+# Default values for shop chart (placeholders only — override secrets for real use)
+
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  replicaCount: 1
+  image:
+    repository: shop-api
+    tag: phase2
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  probes:
+    liveness:
+      path: /health
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      path: /ready
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 6
+  # Mount SECURITY_ARTIFACTS_DIR so /api/security/* can serve file-sourced artifacts
+  securityArtifacts:
+    enabled: true
+    mountPath: /artifacts
+    # configmap | emptyDir
+    source: configmap
+  env:
+    FLASK_ENV: production
+    SECURITY_ARTIFACTS_DIR: /artifacts
+
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "15.8-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  # emptyDir is enough for Minikube demos; set persistence.enabled for PVC
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Placeholders only — do not commit real credentials
+  auth:
+    username: shop
+    password: shop
+    database: shopdb
+
+# Non-secret config (merged into ConfigMap)
+config:
+  FLASK_APP: "wsgi:app"
+
+# Secret placeholders (DATABASE_URL built from postgres.auth when postgres.enabled)
+secret:
+  # Optional override; if empty and postgres.enabled, chart builds:
+  # postgresql://USER:PASS@RELEASE-postgres:5432/DB
+  databaseUrl: ""
+  secretKey: "change-me-in-production"
+
+ingress:
+  enabled: true
+  className: nginx
+  host: shop.local
+  path: /
+  pathType: Prefix
+  annotations: {}
+
+# NetworkPolicy intentionally skipped for v1

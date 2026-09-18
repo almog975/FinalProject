@@ -1,0 +1,45 @@
+# Minikube-oriented overrides
+
+api:
+  image:
+    repository: shop-api
+    tag: phase2
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  securityArtifacts:
+    enabled: true
+    source: configmap
+  env:
+    FLASK_ENV: development
+
+postgres:
+  enabled: true
+  persistence:
+    enabled: false  # emptyDir for ephemeral Minikube demos
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  auth:
+    username: shop
+    password: shop
+    database: shopdb
+
+secret:
+  secretKey: "minikube-dev-secret"
+  databaseUrl: ""  # auto-built from postgres.auth + in-cluster service name
+
+ingress:
+  enabled: true
+  className: nginx
+  host: shop.local

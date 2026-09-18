@@ -1,0 +1,13 @@
+{{- if and .Values.api.securityArtifacts.enabled (eq .Values.api.securityArtifacts.source "configmap") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shop.fullname" . }}-security-artifacts
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+data:
+  sbom.json: |
+{{ .Files.Get "files/sbom.json" | indent 4 }}
+  scan-report.json: |
+{{ .Files.Get "files/scan-report.json" | indent 4 }}
+{{- end }}

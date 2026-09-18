@@ -1,0 +1,8 @@
+apiVersion: v2
+name: shop
+description: DevSecOps Shop API + Postgres for Minikube demos (Phase 3)
+type: application
+version: 0.1.0
+appVersion: "phase2"
+# No chart dependencies (e.g. Bitnami Postgres) in v1 — fewer moving parts and no
+# external chart pull required for offline / air-gapped Minikube demos.

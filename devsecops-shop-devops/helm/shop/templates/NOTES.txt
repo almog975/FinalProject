@@ -1,0 +1,14 @@
+Shop chart installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+API Service: {{ include "shop.fullname" . }}:{{ .Values.api.service.port }}
+{{- if .Values.postgres.enabled }}
+Postgres Service: {{ include "shop.postgres.fullname" . }}:{{ .Values.postgres.service.port }}
+{{- end }}
+{{- if .Values.ingress.enabled }}
+
+Ingress host: http://{{ .Values.ingress.host }}
+  (add to /etc/hosts via: echo "$(minikube ip) {{ .Values.ingress.host }}" | sudo tee -a /etc/hosts)
+{{- end }}
+
+Image default: {{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}
+Build/load from ../devsecops-shop-app before pods become Ready (see devops README).
