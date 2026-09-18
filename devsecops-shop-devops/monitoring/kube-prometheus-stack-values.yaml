@@ -97,7 +97,7 @@ grafana:
       cpu: 300m
       memory: 512Mi
   service:
-    type: ClusterIP
+    type: NodePort   # Minikube: minikube service kube-prometheus-stack-grafana -n monitoring --url
 
 # Node / kubelet rules still useful on Minikube; disable heavy pieces if OOM
 kubeEtcd:

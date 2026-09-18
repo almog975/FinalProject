@@ -247,7 +247,14 @@ terraform apply -var='enable_monitoring=true'
 
 See [`devsecops-shop-devops/terraform/README.md`](devsecops-shop-devops/terraform/README.md).
 
-### Grafana port-forward
+### Grafana access (Minikube)
+
+```bash
+minikube service kube-prometheus-stack-grafana -n monitoring --url
+```
+
+Or port-forward:
+
 
 ```bash
 kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
