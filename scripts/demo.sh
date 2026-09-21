@@ -33,14 +33,17 @@ cd ..
 # --- Phase 3: Minikube + Helm ---
 minikube start --memory=4096 --cpus=2
 minikube addons enable ingress
-./scripts/build-shop-image.sh              # docker build+load OR minikube image build
-# (alt) cd devsecops-shop-app && minikube image build -t shop-api:phase2 .
+./scripts/build-shop-image.sh              # builds shop-api + shop-web
+# (alt) cd devsecops-shop-app && \
+#   minikube image build -t shop-api:phase2 -f Dockerfile . && \
+#   minikube image build -t shop-web:phase2 -f frontend/Dockerfile frontend
 cd devsecops-shop-devops
 helm upgrade --install shop ./helm/shop -f helm/shop/values-dev.yaml -n shop --create-namespace
 echo "$(minikube ip) shop.local"   # add to /etc/hosts with sudo
 curl -s http://shop.local/health
-# UI dashboard (same origin as API):
-minikube service shop -n shop --url
+# UI dashboard (shop-web nginx; Ingress → web):
+minikube service shop-web -n shop --url
+# API NodePort (optional): minikube service shop -n shop --url
 # Open printed URL → /  (Overview | Products | Cart | Orders | Security | System)
 cd ..
 

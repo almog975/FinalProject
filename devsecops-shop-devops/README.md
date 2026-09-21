@@ -35,9 +35,9 @@ v1 ships a simple Postgres `Deployment` + `Service` + optional PVC / `emptyDir` 
 - Docker (to build the API image)
 - Ingress addon (nginx)
 
-### Build / load the API image
+### Build / load API + web images
 
-The chart defaults to `shop-api:phase2`. From the **monorepo root**, prefer the helper (auto-selects Docker vs Minikube):
+The chart defaults to `shop-api:phase2` and `shop-web:phase2`. From the **monorepo root**, prefer the helper (builds **both**, auto-selects Docker vs Minikube):
 
 ```bash
 ./scripts/build-shop-image.sh              # tag defaults to phase2
@@ -45,17 +45,20 @@ The chart defaults to `shop-api:phase2`. From the **monorepo root**, prefer the 
 
 # Manual equivalents (from devsecops-shop-app):
 # Option A — Minikube build (when host Docker is broken / unavailable)
-minikube image build -t shop-api:phase2 .
+minikube image build -t shop-api:phase2 -f Dockerfile .
+minikube image build -t shop-web:phase2 -f frontend/Dockerfile frontend
 
 # Option B — local Docker, then load into Minikube
-docker build -t shop-api:phase2 .
+docker build -t shop-api:phase2 -f Dockerfile .
+docker build -t shop-web:phase2 -f frontend/Dockerfile frontend
 minikube image load shop-api:phase2
+minikube image load shop-web:phase2
 ```
 
-Confirm the image is visible to the cluster:
+Confirm the images are visible to the cluster:
 
 ```bash
-minikube image ls | grep shop-api
+minikube image ls | grep -E 'shop-api|shop-web'
 ```
 
 ### Minikube install (copy-paste)
@@ -72,17 +75,18 @@ Map the Ingress host (after install):
 ```bash
 echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
 curl -s http://shop.local/health
-# Or: minikube service shop -n shop --url   # NodePort via values-dev.yaml
+# Or UI: minikube service shop-web -n shop --url   # NodePort via values-dev.yaml
 curl -s http://shop.local/ready
 curl -s http://shop.local/api/security/sbom | head
 ```
 
-### Shop UI
+### Shop UI (shop-web)
 
-The React SPA is built into the **API image** and served by Flask at `/` (same Service / Ingress as the API). No separate `shop-web` chart is required. After rebuild + `helm upgrade`, open:
+The React SPA runs in a separate **`shop-web`** nginx Deployment/Service (`web.enabled`, default true). Ingress `shop.local` points at **shop-web**; nginx proxies `/api/`, `/health`, `/ready`, `/metrics` to the API Service (`web.apiUpstream`, default `shop:5000`). After rebuild + `helm upgrade`, open:
 
 ```bash
-minikube service shop -n shop --url
+minikube service shop-web -n shop --url
+# Direct API NodePort (optional): minikube service shop -n shop --url
 ```
 
 Or `http://shop.local/` when Ingress + `/etc/hosts` are set.
@@ -102,6 +106,7 @@ Sample SBOM + scan-report JSON under `helm/shop/files/` are mounted into the API
 ```bash
 kubectl -n shop get pods,svc,ingress
 kubectl -n shop logs -l app.kubernetes.io/component=api -f
+kubectl -n shop logs -l app.kubernetes.io/component=web -f
 helm uninstall shop -n shop
 ```
 

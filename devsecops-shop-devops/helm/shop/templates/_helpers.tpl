@@ -78,3 +78,12 @@ DATABASE_URL — from values.secret.databaseUrl or built from postgres.auth
 {{- fail "secret.databaseUrl must be set when postgres.enabled is false" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Web (nginx SPA) selector labels
+*/}}
+{{- define "shop.web.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "shop.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: web
+{{- end }}

@@ -42,6 +42,37 @@ api:
     FLASK_ENV: production
     SECURITY_ARTIFACTS_DIR: /artifacts
 
+web:
+  enabled: true
+  image:
+    repository: shop-web
+    tag: phase2
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 80
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  probes:
+    liveness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      initialDelaySeconds: 3
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  # nginx proxy_pass upstream (API Service host:port). Release name "shop" → shop:5000
+  apiUpstream: "shop:5000"
+
 postgres:
   enabled: true
   image:

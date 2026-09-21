@@ -21,7 +21,13 @@ spec:
             pathType: {{ .Values.ingress.pathType }}
             backend:
               service:
+                {{- if .Values.web.enabled }}
+                name: {{ include "shop.fullname" . }}-web
+                port:
+                  number: {{ .Values.web.service.port }}
+                {{- else }}
                 name: {{ include "shop.fullname" . }}
                 port:
                   number: {{ .Values.api.service.port }}
+                {{- end }}
 {{- end }}
