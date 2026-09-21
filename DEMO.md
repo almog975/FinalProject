@@ -9,6 +9,7 @@ Monorepo: [`almog975/FinalProject`](https://github.com/almog975/FinalProject).
 | 3 | Minikube Helm (`shop` ns, `shop.local`) |
 | 4 | Jenkins Script Path + hard gates (document even if Jenkins is offline) |
 | 5 | Prometheus / Grafana / Loki (Helm **or** Terraform) |
+| B | Argo CD GitOps — shop Application Synced/Healthy |
 | 6 | This runbook + root overview |
 
 Optional helper: [`scripts/demo.sh`](scripts/demo.sh) prints the ordered commands.
@@ -313,6 +314,51 @@ Details: [`devsecops-shop-devops/monitoring/README.md`](devsecops-shop-devops/mo
 
 ---
 
+
+## Phase B — Argo CD GitOps (shop chart)
+
+**Jenkins** stays CI hard gates; **Argo CD** is GitOps CD / self-heal for the shop Helm chart.
+Dev-only auto-sync + selfHeal + prune — see risk note in the Argo README.
+
+Full steps: [`devsecops-shop-devops/argocd/README.md`](devsecops-shop-devops/argocd/README.md).  
+Helper: [`scripts/install-argocd.sh`](scripts/install-argocd.sh).
+
+```bash
+# Prereq: Minikube up + shop images loaded
+./scripts/build-shop-image.sh
+
+# Install Argo CD (official manifests) + Application
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl -n argocd wait --for=condition=Ready pods --all --timeout=300s
+
+kubectl apply -f devsecops-shop-devops/argocd/application-shop.yaml
+# Or: ./scripts/install-argocd.sh
+
+# UI — port-forward
+kubectl -n argocd port-forward svc/argocd-server 8081:443
+# https://localhost:8081  (admin + password below; accept self-signed cert)
+
+# Initial admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+echo
+
+# Confirm Synced / Healthy
+kubectl -n argocd get application shop
+kubectl -n shop get pods,svc,ingress
+```
+
+Optional NodePort (Windows Minikube):
+
+```bash
+kubectl -n argocd patch svc argocd-server -p '{"spec":{"type":"NodePort"}}'
+minikube service argocd-server -n argocd --url
+```
+
+Repo `https://github.com/almog975/FinalProject` must be reachable from the cluster (public is OK).
+
+---
+
 ## Expected screenshots / grading checklist
 
 Use this as a defense punch-list:
@@ -324,6 +370,7 @@ Use this as a defense punch-list:
 - [ ] **Helm**: pods Running in `shop`; Ingress `shop.local`; `/health` via Ingress
 - [ ] **UI dashboard**: browser at `/` — Overview | Products | Cart | Orders | Security | System
 - [ ] **Jenkins**: Script Path screenshot + hard-gates table (secrets / CRITICAL / HIGH / coverage)
+- [ ] **Argo CD**: Application `shop` Synced/Healthy; UI via port-forward or NodePort
 - [ ] **Monitoring**: Grafana “DevSecOps Shop API” dashboard; Prometheus target UP (or scrape proof via port-forward)
 - [ ] **Terraform**: `validate` / `plan` with `enable_cloud=false`; mention `enable_monitoring` opt-in
 - [ ] **Repo story**: phases linked from root [`README.md`](README.md)
@@ -349,6 +396,10 @@ Use this as a defense punch-list:
 ## Cleanup (optional)
 
 ```bash
+# Argo CD Application (+ optional Argo uninstall)
+kubectl delete -f devsecops-shop-devops/argocd/application-shop.yaml --ignore-not-found
+kubectl delete namespace argocd --ignore-not-found
+
 # Monitoring
 helm uninstall loki -n monitoring 2>/dev/null || true
 helm uninstall kube-prometheus-stack -n monitoring 2>/dev/null || true

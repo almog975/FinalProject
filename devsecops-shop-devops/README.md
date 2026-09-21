@@ -2,7 +2,7 @@
 
 Presenter runbook (all phases): [`../DEMO.md`](../DEMO.md).
 
-Helm chart for Minikube (Phase 3), **Jenkins CI/CD with hard gates** (Phase 4), and **Terraform + Prometheus/Grafana/Loki** (Phase 5).
+Helm chart for Minikube (Phase 3), **Jenkins CI with hard gates** (Phase 4), **Terraform + Prometheus/Grafana/Loki** (Phase 5), and **Argo CD GitOps CD** (Phase B).
 
 ## Layout
 
@@ -10,6 +10,7 @@ Helm chart for Minikube (Phase 3), **Jenkins CI/CD with hard gates** (Phase 4), 
 devsecops-shop-devops/
   helm/shop/                 # Minikube Helm chart (API + in-chart Postgres) — Phase 3
   jenkins/                   # Declarative Jenkinsfile + pod-templates/ + helper scripts — Phase 4
+  argocd/                    # Argo CD Application + install notes — Phase B GitOps CD
   security/                  # gitleaks / checkov / policies — Phase 4
   newman/                    # Postman collection — Phase 4
   terraform/                 # Local/Minikube Terraform (no cloud bills by default) — Phase 5
@@ -276,9 +277,39 @@ Optional later: a Jenkins stage could deploy or smoke-check this stack — **not
 
 ---
 
+
+---
+
+## Phase B — Argo CD GitOps CD
+
+**Jenkins** = CI hard gates (secrets / Trivy CRITICAL / Checkov HIGH+ / coverage ≥70%).  
+**Argo CD** = GitOps CD: reconciles `shop` to Git (`main`, path `helm/shop`, `values-dev.yaml`) and **self-heals** drift. Auto-sync + prune is for **student Minikube / dev demos only**.
+
+| Piece | Path |
+|-------|------|
+| Application | [`argocd/application-shop.yaml`](argocd/application-shop.yaml) |
+| Install notes | [`argocd/README.md`](argocd/README.md) |
+| Helper script | [`../scripts/install-argocd.sh`](../scripts/install-argocd.sh) |
+
+```bash
+# From monorepo root (Minikube up; images loaded)
+./scripts/build-shop-image.sh
+./scripts/install-argocd.sh
+# Or manually:
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl -n argocd wait --for=condition=Ready pods --all --timeout=300s
+kubectl apply -f argocd/application-shop.yaml
+kubectl -n argocd port-forward svc/argocd-server 8081:443
+# https://localhost:8081 — admin + secret password; Application shop → Synced/Healthy
+```
+
+Does **not** replace Jenkins, and does **not** App-of-Apps monitoring/Jenkins.
+
 ## Out of scope
 
 - Multi-cloud Terraform, Vault, paid APM
 - NetworkPolicy (skipped for Helm v1)
+- Replacing Jenkins; App-of-Apps for monitoring/Jenkins; microservices split
 
 Phase 6 demo runbook: [`../DEMO.md`](../DEMO.md).

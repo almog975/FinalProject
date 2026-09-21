@@ -65,6 +65,11 @@ cd devsecops-shop-devops/terraform
 terraform init -backend=false && terraform validate && terraform plan
 # terraform apply -var='enable_monitoring=true'   # only with Minikube up
 cd ../..
+
+# --- Phase B: Argo CD GitOps ---
+# ./scripts/install-argocd.sh
+# kubectl -n argocd port-forward svc/argocd-server 8081:443
+# Application shop → Synced / Healthy (Jenkins = CI gates; Argo = GitOps CD)
 CMDS
   echo
   echo "# Tip: ./scripts/demo.sh --pytest   or   ./scripts/demo.sh --run-compose"
