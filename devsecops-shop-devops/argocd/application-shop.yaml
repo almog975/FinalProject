@@ -1,0 +1,33 @@
+# Argo CD Application — shop Helm chart (dev GitOps)
+# Apply after Argo CD is installed:
+#   kubectl apply -f application-shop.yaml
+#
+# Repo must be reachable from the cluster (public GitHub is fine).
+# Images (shop-api:phase2, shop-web:phase2) must already exist in Minikube
+# (./scripts/build-shop-image.sh) or pulls will fail ImagePullBackOff.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shop
+  namespace: argocd
+  # Optional: cascade delete when Application is removed
+  # finalizers:
+  #   - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/almog975/FinalProject.git
+    targetRevision: main
+    path: devsecops-shop-devops/helm/shop
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
