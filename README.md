@@ -14,9 +14,9 @@
 
 | Phase | Deliverable | Location |
 |-------|-------------|----------|
-| **1** | Flask shop API (products, cart, orders) + **React admin dashboard** (Vite/TS, Flask-served), Docker Compose, health/ready/metrics | [`devsecops-shop-app/`](devsecops-shop-app/) |
+| **1** | Flask shop API (products, cart, orders) + **React admin dashboard** (Vite/TS, **shop-web** nginx), Docker Compose, health/ready/metrics | [`devsecops-shop-app/`](devsecops-shop-app/) |
 | **2** | SBOM + vulnerability scan-report endpoints (`/api/security/*`), samples + ingest | same app + `samples/` |
-| **3** | Helm chart for Minikube (API + in-chart Postgres), Ingress `shop.local` | [`devsecops-shop-devops/helm/shop`](devsecops-shop-devops/helm/shop) |
+| **3** | Helm chart for Minikube (API + **shop-web** + in-chart Postgres), Ingress `shop.local` → web | [`devsecops-shop-devops/helm/shop`](devsecops-shop-devops/helm/shop) |
 | **4** | Jenkins declarative pipeline with **hard gates** (secrets / Trivy CRITICAL / Checkov HIGH / coverage ≥70%) | [`devsecops-shop-devops/jenkins/`](devsecops-shop-devops/jenkins/) |
 | **5** | Terraform (local, `enable_cloud=false`) + kube-prometheus-stack / Loki / Grafana dashboard | [`terraform/`](devsecops-shop-devops/terraform/), [`monitoring/`](devsecops-shop-devops/monitoring/) |
 | **6** | Demo runbook + project overview (this README) | [`DEMO.md`](DEMO.md) |
@@ -35,6 +35,7 @@ flowchart TB
 
   subgraph mk["Minikube"]
     Ingress[Ingress nginx<br/>shop.local]
+    Web[shop-web nginx<br/>SPA + /api proxy]
     API[shop-api Deployment]
     PG[(Postgres)]
     SM[ServiceMonitor]
@@ -47,8 +48,10 @@ flowchart TB
   Dev --> Jenkins
   Jenkins -->|docker build / trivy / syft| API
   Jenkins -->|helm upgrade| API
+  Jenkins -->|helm upgrade| Web
   Compose --> API
-  Ingress --> API
+  Ingress --> Web
+  Web -->|/api /health /ready /metrics| API
   API --> PG
   API -->|GET /metrics| SM
   SM --> Prom
@@ -57,8 +60,8 @@ flowchart TB
   Loki --> Graf
 ```
 
-**Request path (demo):** browser (React dashboard at `/`) or curl → `shop.local` (Ingress) → shop-api → Postgres. SPA assets ship inside the API image — **no microservices split**.  
-**Observability:** shop-api exposes `GET /metrics` → scraped by Prometheus → Grafana dashboard *DevSecOps Shop API*.
+**Request path (demo):** browser → `shop.local` (Ingress) → **shop-web** (nginx SPA) → proxies `/api/*` to shop-api → Postgres. Flask is **API-only**; UI is a separate nginx container (still one Helm chart — not a microservices product split).  
+**Observability:** shop-api exposes `GET /metrics` → scraped by Prometheus (API ServiceMonitor, not web) → Grafana dashboard *DevSecOps Shop API*.
 
 ---
 
@@ -99,9 +102,10 @@ cd devsecops-shop-app && cp -n .env.example .env && docker compose up --build
 
 # Phase 3
 minikube start --memory=4096 --cpus=2 && minikube addons enable ingress
-# build/load shop-api:phase2, then:
+# build/load shop-api:phase2 + shop-web:phase2 (./scripts/build-shop-image.sh), then:
 helm upgrade --install shop ./devsecops-shop-devops/helm/shop \
   -f ./devsecops-shop-devops/helm/shop/values-dev.yaml -n shop --create-namespace
+# UI: minikube service shop-web -n shop --url
 
 # Phase 5 (Helm path)
 # → commands in DEMO.md / monitoring/README.md

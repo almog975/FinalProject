@@ -1,16 +1,5 @@
-# Multi-stage build: Vite React SPA + Flask API (SPA served by Flask)
-# Stage 1: frontend
-FROM node:20.19-alpine AS frontend
-
-WORKDIR /frontend
-
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-COPY frontend/ ./
-RUN npm run build
-
-# Stage 2: Python dependency builder
+# Multi-stage build: Flask API only (SPA served by separate shop-web nginx image)
+# Stage 1: Python dependency builder
 FROM python:3.11.9-slim AS builder
 
 WORKDIR /build
@@ -23,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Stage 3: runtime (non-root UID 10001 for Checkov CKV_K8S_40 / K8S hardening)
+# Stage 2: runtime (non-root UID 10001 for Checkov CKV_K8S_40 / K8S hardening)
 FROM python:3.11.9-slim AS runtime
 
 WORKDIR /app
@@ -34,22 +23,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 appuser \
     && useradd -u 10001 -g 10001 --create-home --shell /bin/bash appuser \
-    && mkdir -p /artifacts /app/frontend/dist /tmp \
+    && mkdir -p /artifacts /tmp \
     && chown -R 10001:10001 /artifacts /app /tmp
 
 COPY --from=builder /install /usr/local
 COPY app/ ./app/
 COPY samples/ ./samples/
 COPY wsgi.py .
-COPY --from=frontend /frontend/dist ./frontend/dist
 
 RUN chown -R 10001:10001 /app /artifacts
 
 ENV FLASK_APP=wsgi:app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    SECURITY_ARTIFACTS_DIR=/artifacts \
-    FRONTEND_DIST=/app/frontend/dist
+    SECURITY_ARTIFACTS_DIR=/artifacts
 
 USER 10001
 

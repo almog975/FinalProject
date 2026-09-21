@@ -11,10 +11,10 @@ Phase 2: security report endpoints that serve the latest SBOM and vulnerability 
 
 ```
 app/           # create_app factory, models, API, services, CLI, SPA static
-frontend/      # Vite + React + TypeScript SPA (served from dist by Flask)
+frontend/      # Vite + React + TypeScript SPA → shop-web nginx image
 samples/       # bundled demo SBOM + scan-report (compose works without a pipeline)
 tests/         # pytest suite
-Dockerfile     # multi-stage: Node SPA build + python:3.11.9-slim runtime
+Dockerfile     # multi-stage: Flask API only (python:3.11.9-slim, UID 10001)
 docker-compose.yml
 requirements.txt
 requirements-dev.txt
@@ -22,7 +22,7 @@ requirements-dev.txt
 
 ## Frontend (React admin dashboard)
 
-Vite + React + TypeScript **admin dashboard** under `frontend/` (Overview, Products, Cart, Orders, Security, System). **Delivered via Flask** (same origin): `npm run build` → `frontend/dist`, served by the API process. No separate nginx / shop-web Deployment — not a microservices split.
+Vite + React + TypeScript **admin dashboard** under `frontend/` (Overview, Products, Cart, Orders, Security, System). In Minikube it runs as a separate **`shop-web`** nginx container (Helm `web:`). nginx serves the SPA and proxies `/api/`, `/health`, `/ready`, `/metrics` to the API Service. The API `Dockerfile` is **API-only** — `app/frontend.py` still registers SPA routes if `frontend/dist` is present (local/rollback), but the image no longer ships dist.
 
 ### Local UI against Compose
 
@@ -36,18 +36,19 @@ cd frontend && npm install && npm run dev
 
 ### Production / Minikube rebuild
 
-The multi-stage `Dockerfile` builds the SPA with Node, then copies `dist` into `/app/frontend/dist`. Flask serves `/` (and client-route fallback). After rebuild/redeploy:
+Build **both** images, then Helm upgrade:
 
 ```bash
-# From monorepo root: ../scripts/build-shop-image.sh   (or minikube image build below)
-minikube image build -t shop-api:phase2 .
-kubectl -n shop rollout restart deploy/shop
-# or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
-#       -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop
-minikube service shop -n shop --url
+# From monorepo root: ../scripts/build-shop-image.sh
+minikube image build -t shop-api:phase2 -f Dockerfile .
+minikube image build -t shop-web:phase2 -f frontend/Dockerfile frontend
+helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
+  -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop --create-namespace
+minikube service shop-web -n shop --url
+# API NodePort (optional): minikube service shop -n shop --url
 ```
 
-Open the printed URL (UI at `/`; `/api/*` unchanged). Details: [`frontend/README.md`](frontend/README.md).
+Open the printed URL (UI at `/`; `/api/*` proxied by nginx). Details: [`frontend/README.md`](frontend/README.md).
 
 ## Quick start (Docker Compose)
 

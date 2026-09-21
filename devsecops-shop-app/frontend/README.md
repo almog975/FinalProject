@@ -1,9 +1,9 @@
 # DevSecOps Shop — Frontend
 
-Vite + React + TypeScript **admin dashboard** for the shop monolith API. No auth.
+Vite + React + TypeScript **admin dashboard** for the shop API. No auth.
 Client routing via `react-router-dom` (Overview, Products, Cart, Orders, Security, System).
 
-In production / Minikube the built assets are served by Flask from `frontend/dist` (same origin — no CORS). There is **no** separate frontend microservice or `shop-web` chart.
+In Minikube / Helm the built assets are served by the **`shop-web`** nginx image (`frontend/Dockerfile`). nginx proxies `/api/`, `/health`, `/ready`, and `/metrics` to the Flask API Service (default upstream `shop:5000`). Same-origin from the browser — no CORS.
 
 ## Setup
 
@@ -38,24 +38,33 @@ npm install
 npm run build
 ```
 
-Output: `frontend/dist/` (copied into the Docker image and served by Flask). Do not commit `dist` or `node_modules` — the Dockerfile multi-stage build produces them.
+Output: `frontend/dist/` (copied into the **shop-web** Docker image). Do **not** commit `dist` or `node_modules` — the frontend Dockerfile multi-stage build produces them.
+
+## nginx (shop-web)
+
+- `nginx.conf.template` — used by the image; `${API_UPSTREAM}` substituted at start (default `shop:5000`)
+- `nginx.conf` — same config with default upstream expanded (reference / local tests)
+- `Dockerfile` — `npm ci` + `npm run build` → `nginx:alpine`, listens on **8080** (non-root); Helm Service still exposes port **80**
 
 ## Rebuild & redeploy (Minikube)
 
-From the app repo root (`devsecops-shop-app/`), with the Helm release named `shop` in namespace `shop`:
+From the app repo root (`devsecops-shop-app/`), with Helm release `shop` in namespace `shop`:
 
 ```bash
-minikube image build -t shop-api:phase2 .
-kubectl -n shop rollout restart deploy/shop
-# or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop
-minikube service shop -n shop --url
+minikube image build -t shop-api:phase2 -f Dockerfile .
+minikube image build -t shop-web:phase2 -f frontend/Dockerfile frontend
+helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
+  -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop --create-namespace
+minikube service shop-web -n shop --url
 ```
 
-Then open the printed URL (or `http://shop.local` if Ingress + `/etc/hosts` are set).
+Or from monorepo root: `./scripts/build-shop-image.sh` then the same `helm upgrade`.
+
+Open the printed URL (or `http://shop.local` if Ingress + `/etc/hosts` are set). Ingress targets **shop-web** when `web.enabled` is true.
 
 ## Standalone preview against Minikube NodePort
 
-If you open the SPA from Vite preview (or another host) instead of Flask:
+If you open the SPA from Vite preview (or another host) instead of shop-web:
 
 ```bash
 minikube service shop -n shop --url
@@ -70,7 +79,7 @@ Or for the Vite dev server:
 VITE_API_BASE_URL='http://<minikube-nodeport>' npm run dev
 ```
 
-When the UI is served by Flask (Compose image or Helm shop pod), leave `VITE_API_BASE_URL` unset so requests stay same-origin.
+When the UI is served by shop-web (Helm), leave `VITE_API_BASE_URL` unset so requests stay same-origin (nginx proxies to the API).
 
 ## Dashboard pages
 

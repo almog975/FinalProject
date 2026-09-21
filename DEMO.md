@@ -108,13 +108,13 @@ From **monorepo root** (or `devsecops-shop-devops` as noted):
 minikube start --memory=4096 --cpus=2
 minikube addons enable ingress
 
-# Build / load API image (chart default: shop-api:phase2)
+# Build / load API + web images (chart defaults: shop-api:phase2, shop-web:phase2)
 # Dual path: prefer Minikube when host Docker is broken; use helper or docker when it works.
-./scripts/build-shop-image.sh              # auto: docker build+load OR minikube image build
-# OR manually:
-#   cd devsecops-shop-app && minikube image build -t shop-api:phase2 .
-#   cd devsecops-shop-app && docker build -t shop-api:phase2 . && minikube image load shop-api:phase2
-minikube image ls | grep shop-api
+./scripts/build-shop-image.sh              # auto: builds BOTH shop-api + shop-web
+# OR manually (from devsecops-shop-app):
+#   minikube image build -t shop-api:phase2 -f Dockerfile .
+#   minikube image build -t shop-web:phase2 -f frontend/Dockerfile frontend
+minikube image ls | grep -E 'shop-api|shop-web'
 
 # Install chart
 cd devsecops-shop-devops
@@ -124,7 +124,8 @@ helm upgrade --install shop ./helm/shop \
 
 # Host mapping
 echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
-# Or without /etc/hosts: minikube service shop -n shop --url
+# UI without /etc/hosts: minikube service shop-web -n shop --url
+# API NodePort (optional): minikube service shop -n shop --url
 
 curl -s http://shop.local/health
 curl -s http://shop.local/ready
@@ -134,17 +135,23 @@ kubectl -n shop get pods,svc,ingress
 
 ### UI dashboard (admin SPA)
 
-The React admin dashboard is built into the **same** `shop-api:phase2` image and served by Flask at `/` (no separate frontend service). Curl API demos above still apply.
+The React admin dashboard runs in a separate **`shop-web`** nginx container. Ingress `shop.local` points at **shop-web**; nginx serves the SPA and proxies `/api/`, `/health`, `/ready`, `/metrics` to the API Service (`shop:5000`). Flask remains API-only (no SPA baked into the API image).
 
 ```bash
-# Rebuild image (includes Vite SPA) and restart the Helm deployment
-./scripts/build-shop-image.sh              # or: cd devsecops-shop-app && minikube image build -t shop-api:phase2 .
-kubectl -n shop rollout restart deploy/shop
-# or: helm upgrade --install shop ../devsecops-shop-devops/helm/shop \
-#       -f ../devsecops-shop-devops/helm/shop/values-dev.yaml -n shop
+# Rebuild both images and upgrade Helm
+./scripts/build-shop-image.sh
+# Manual (Windows Minikube / from app dir):
+#   cd devsecops-shop-app
+#   minikube image build -t shop-api:phase2 -f Dockerfile .
+#   minikube image build -t shop-web:phase2 -f frontend/Dockerfile frontend
+cd devsecops-shop-devops
+helm upgrade --install shop ./helm/shop \
+  -f helm/shop/values-dev.yaml -n shop --create-namespace
 
-minikube service shop -n shop --url
+# UI (NodePort via values-dev)
+minikube service shop-web -n shop --url
 # Open the printed URL (or http://shop.local) — UI at /
+# Direct API (optional): minikube service shop -n shop --url
 ```
 
 Pages (left sidebar): **Overview** | **Products** | **Cart** | **Orders** | **Security** | **System**.
