@@ -5,13 +5,29 @@ depth; the **review-api** launches a short-lived **scanner-worker** run that clo
 **Semgrep, Gitleaks and Trivy**, optionally asks an AI model for a risk explanation + fixes, and
 writes `report.json` / `report.md` to a shared reports volume.
 
-Part of the Technion DevOps final project (monorepo `FinalProject`, branch `ai-scan-phase-1-backend`).
+Part of the Technion DevOps final project (monorepo `FinalProject`).
 The sibling project `devsecops-shop-*` holds the existing Jenkins / Helm / Argo CD / monitoring work;
 see [`../README.md`](../README.md).
 
-> Status: **Phase 1 – backend only.** No gateway, UI app, Helm chart, K8s manifests or CI pipeline
-> exist for AI Scan Repos yet (see [Gaps](#gaps--todo)). HTML mockups of the UI live outside the repo
-> at `/workspace/ai-scan-ui/` (login, new scan, depth, progress, results, settings).
+## Layout (Phase 0 / Foundation)
+
+```
+ai-scan-repos/
+  contracts/       OpenAPI 3.1 (gateway, review-api) + JSON Schema 2020-12 (common, finding, report, checkpoint, progress)
+  frontend/        React/Vite -> nginx-unprivileged, :8080
+  gateway/         FastAPI, :8000  (/healthz /readyz /metrics)
+  review-api/      FastAPI, :8001  (/healthz /readyz /metrics) – Alembic migrations in review-api/alembic/
+  scanner-worker/  Python Job image; probe server :8002 (/healthz /readyz /metrics)
+  deploy/k8s/      kustomize base: namespace, Secret placeholder, postgres StatefulSet+PVC+headless svc, deployments+services, Job template
+  infra/db/        target PostgreSQL schema v1 (schema.sql, migrations/001_init.sql)
+  infra/           other infra-level assets
+  docs/            architecture notes, ADRs, runbooks
+  Makefile         `make test` runs every service's `make test` (passes when a suite is empty); `make contracts` validates contracts
+```
+
+Fixed ports: frontend 8080, gateway 8000, review-api 8001, scanner-worker probes 8002.
+Deferred past v0.1: per-depth estimates and server-side findings paging (see contracts/README.md).
+
 
 ## Components
 
@@ -42,16 +58,16 @@ export AI_KEYS_ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Ferne
 export REPORTS_DIR=$PWD/reports
 export LOCAL_WORKER_CWD=$PWD/scanner-worker
 export AI_PROVIDER=none          # or openai_compatible + AI_BASE_URL/AI_MODEL
-cd review-api && uvicorn --factory app.main:get_app --port 8000
+cd review-api && uvicorn --factory app.main:get_app --port 8001
 ```
 
 In another shell (gitleaks/trivy are skipped with status `skipped` if not on PATH):
 
 ```bash
 H='-H X-Internal-Token:dev-token -H X-User-Id:alice -H Content-Type:application/json'
-curl -s $H -X POST localhost:8000/reviews -d '{"repo_url":"https://github.com/OWASP/NodeGoat","depth":"quick"}'
-curl -s $H localhost:8000/reviews/<id>          # status/progress
-curl -s $H localhost:8000/reviews/<id>/report.md
+curl -s $H -X POST localhost:8001/reviews -d '{"repo_url":"https://github.com/OWASP/NodeGoat","depth":"quick"}'
+curl -s $H localhost:8001/reviews/<id>          # status/progress
+curl -s $H localhost:8001/reviews/<id>/report.md
 ```
 
 ### Tests
@@ -67,7 +83,7 @@ cd scanner-worker && pytest -q    # parsers/report (fixtures), AI client (mock t
 docker build -t ai-scan-repos/review-api:dev review-api
 docker build -t ai-scan-repos/scanner-worker:dev scanner-worker
 ```
-Both run as UID 10001. review-api runs `alembic upgrade head` then uvicorn on :8000.
+Both run as UID 10001. review-api runs `alembic upgrade head` then uvicorn on :8001.
 
 ## K3s deployment (Helm)
 
