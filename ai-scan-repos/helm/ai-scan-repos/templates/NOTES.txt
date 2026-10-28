@@ -1,0 +1,4 @@
+AI Scan Repos deployed to namespace {{ .Release.Namespace }}.
+UI: {{ .Values.publicUrl }}  (Ingress host {{ .Values.ingress.host }}, class {{ .Values.ingress.className }})
+Required pre-existing Secrets: {{ .Values.secrets.gateway }}, {{ .Values.secrets.reviewApi }}, {{ .Values.secrets.scannerWorker }}, {{ .Values.secrets.postgres }}
+  -> ai-scan-repos/scripts/create-secrets.sh

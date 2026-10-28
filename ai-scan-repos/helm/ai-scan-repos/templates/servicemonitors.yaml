@@ -1,0 +1,19 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- range $app := list "gateway" "review-api" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $app }}
+  namespace: {{ $.Release.Namespace }}
+  labels: {{- include "ais.labels" $ | nindent 4 }}
+    {{- with $.Values.serviceMonitor.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  selector: {matchLabels: {app: {{ $app }}}}
+  namespaceSelector: {matchNames: [{{ $.Release.Namespace }}]}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $.Values.serviceMonitor.interval }}
+---
+{{- end }}
+{{- end }}

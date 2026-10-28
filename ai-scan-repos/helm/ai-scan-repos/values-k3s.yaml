@@ -1,0 +1,22 @@
+# K3S-SRV production-ish values: private registry + TLS.
+image:
+  registry: registry.registry.svc.cluster.local:5000   # or <K3S-SRV-IP>:30500 (see k8s/registry/registries.yaml)
+  tag: "0.3.0"
+  pullPolicy: Always
+imagePullSecrets:
+  - name: regcred      # created by scripts/create-secrets.sh
+publicUrl: https://ai-scan.example.com
+ingress:
+  host: ai-scan.example.com
+  tls:
+    enabled: true
+    secretName: ai-scan-tls
+gateway:
+  cookieSecure: true
+postgres:
+  storageClass: local-path
+reports:
+  storageClass: local-path
+  accessMode: ReadWriteOnce   # single node: review-api + Jobs share the node
+serviceMonitor:
+  enabled: true

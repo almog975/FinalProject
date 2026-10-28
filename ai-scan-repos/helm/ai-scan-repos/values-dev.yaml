@@ -1,0 +1,13 @@
+# Local single-node dev (k3d/minikube/K3s on a laptop) with locally imported images.
+image:
+  registry: ""
+  tag: dev
+  pullPolicy: IfNotPresent
+publicUrl: http://ai-scan.localhost
+ingress:
+  host: ai-scan.localhost
+  tls: {enabled: false}
+gateway:
+  cookieSecure: false   # plain http locally only
+networkPolicy:
+  enabled: true

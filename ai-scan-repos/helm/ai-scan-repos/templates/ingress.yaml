@@ -1,0 +1,29 @@
+{{- if .Values.ingress.enabled }}
+{{- $i := .Values.ingress }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-scan-repos
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+  annotations:
+    {{- if $i.tls.enabled }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- end }}
+    {{- with $i.annotations }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  ingressClassName: {{ $i.className }}
+  {{- if $i.tls.enabled }}
+  tls:
+    - hosts: [{{ $i.host | quote }}]
+      secretName: {{ $i.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $i.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: frontend, port: {number: 80}}}
+{{- end }}

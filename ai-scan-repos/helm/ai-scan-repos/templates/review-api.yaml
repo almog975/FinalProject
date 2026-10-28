@@ -1,0 +1,74 @@
+{{- $v := .Values.reviewApi }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-api
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+    app: review-api
+spec:
+  type: ClusterIP
+  selector: {app: review-api}
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-api
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+    app: review-api
+  annotations:
+    checkov.io/skip1: CKV_K8S_38=review-api must call the Kubernetes API to create scanner Jobs/Secrets (namespaced Role only)
+    checkov.io/skip2: CKV_K8S_35=12-factor app reads config from env; values come from a Secret created out-of-band
+    checkov.io/skip3: CKV_K8S_43=images pinned by immutable CI tag in the private registry (digest pinning is Phase 4/5)
+spec:
+  replicas: {{ $v.replicas }}
+  strategy: {type: Recreate}   # single watchdog; RWO reports volume
+  selector: {matchLabels: {app: review-api}}
+  template:
+    metadata:
+      labels: {app: review-api, ai-scan-repos/db-client: "true"}
+    spec:
+      serviceAccountName: review-api
+      automountServiceAccountToken: true
+      {{- include "ais.pullSecrets" . | nindent 6 }}
+      securityContext: {{- include "ais.podSecurity" (dict "uid" 10001) | nindent 8 }}
+      initContainers:
+        # DB migration (runs before every rollout; Alembic is idempotent). Retries until postgres is ready.
+        - name: migrate
+          image: {{ include "ais.image" (list . $v.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sh", "-c", "for i in $(seq 1 30); do alembic upgrade head && exit 0; sleep 5; done; exit 1"]
+          envFrom: [{secretRef: {name: {{ .Values.secrets.reviewApi }}}}]
+          securityContext: {{- include "ais.containerSecurity" (dict "uid" 10001) | nindent 12 }}
+          resources: {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      containers:
+        - name: review-api
+          image: {{ include "ais.image" (list . $v.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uvicorn", "--factory", "app.main:get_app", "--host", "0.0.0.0", "--port", "8000"]
+          envFrom: [{secretRef: {name: {{ .Values.secrets.reviewApi }}}}]
+          env:
+            - {name: JOB_LAUNCHER, value: kubernetes}
+            - {name: K8S_NAMESPACE, value: {{ .Release.Namespace | quote }}}
+            - {name: SCANNER_IMAGE, value: {{ include "ais.image" (list . .Values.scannerWorker.image) | quote }}}
+            - {name: REPORTS_PVC, value: {{ .Values.reports.pvcName | quote }}}
+            - {name: REPORTS_DIR, value: /reports}
+            - {name: SCANNER_SERVICE_ACCOUNT, value: scanner-worker}
+            - {name: SCANNER_SECRET_NAME, value: {{ .Values.secrets.scannerWorker | quote }}}
+            - {name: REVIEW_API_INTERNAL_URL, value: "http://review-api.{{ .Release.Namespace }}.svc:8000"}
+            - {name: HEARTBEAT_TIMEOUT_SECONDS, value: {{ $v.heartbeatTimeoutSeconds | quote }}}
+            - {name: MAX_ATTEMPTS, value: {{ $v.maxAttempts | quote }}}
+          ports: [{name: http, containerPort: 8000}]
+          securityContext: {{- include "ais.containerSecurity" (dict "uid" 10001) | nindent 12 }}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 10, periodSeconds: 20}
+          resources: {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts:
+            - {name: reports, mountPath: /reports}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: reports, persistentVolumeClaim: {claimName: {{ .Values.reports.pvcName }}}}
+        - {name: tmp, emptyDir: {}}

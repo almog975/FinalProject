@@ -1,0 +1,34 @@
+{{- $r := .Values.reports }}
+{{- if $r.noexecStorageClass.create }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $r.noexecStorageClass.name }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+provisioner: {{ $r.noexecStorageClass.provisioner }}
+{{- with $r.noexecStorageClass.parameters }}
+parameters: {{- toYaml . | nindent 2 }}
+{{- end }}
+mountOptions: ["noexec", "nosuid", "nodev"]
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+---
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $r.pvcName }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ $r.accessMode }}]
+  {{- if $r.noexecStorageClass.create }}
+  storageClassName: {{ $r.noexecStorageClass.name }}
+  {{- else if $r.storageClass }}
+  storageClassName: {{ $r.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $r.size }}
