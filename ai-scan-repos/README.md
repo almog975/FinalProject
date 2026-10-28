@@ -69,6 +69,36 @@ docker build -t ai-scan-repos/scanner-worker:dev scanner-worker
 ```
 Both run as UID 10001. review-api runs `alembic upgrade head` then uvicorn on :8000.
 
+## K3s deployment (Helm)
+
+Chart: `helm/ai-scan-repos/` (values: `values.yaml`, `values-k3s.yaml`, `values-dev.yaml`).
+
+```bash
+scripts/k3s-install.sh                         # K3s + namespaces (ai-scan-repos, jenkins, argocd, monitoring, registry)
+kubectl apply -f k8s/registry/registry.yaml    # private registry (htpasswd auth)
+scripts/create-secrets.sh                      # all Secrets from CLI, values never written to git
+# copy k8s/registry/registries.yaml.example -> /etc/rancher/k3s/registries.yaml, restart k3s, push images
+scripts/deploy.sh k3s                          # helm upgrade --install
+scripts/validate-helm.sh                       # helm lint + template + kubeconform + checkov
+```
+
+What the chart deploys: frontend / gateway / review-api Deployments, postgres StatefulSet (5Gi),
+reports PVC `ai-scan-reports` (5Gi), ClusterIP Services (only the frontend is exposed via the Traefik
+Ingress, TLS optional), review-api Role to create scanner Jobs/Secrets, `scanner-worker` SA
+(automount off), default-deny NetworkPolicies + per-app allows, restricted securityContexts,
+probes, resources, optional ServiceMonitors. Alembic migration runs as a review-api initContainer
+(a pre-install hook would run before Postgres exists). Secrets are referenced by name only:
+`gateway-env`, `review-api-env`, `scanner-worker-env`, `postgres-credentials`, `regcred`.
+
+Notes / limitations:
+- **Reports PVC on local-path is RWO** — fine on a single node (all pods co-located). Multi-node needs
+  an RWX class (`reports.accessMode=ReadWriteMany`, `reports.storageClass=longhorn|nfs`).
+- **noexec**: local-path ignores `mountOptions`, so noexec is not enforced on K3s by default. Set
+  `reports.noexecStorageClass.enabled=true` with a provisioner that honours mountOptions (NFS/Longhorn).
+  Scanner pods still run read-only root, non-root, no capabilities.
+- Scanner AI egress is limited to `scannerWorker.aiEgress` (default Tailscale CGNAT 100.64.0.0/10, ports 1234/11434/8000).
+- Checkov skips are per-resource `checkov.io/skip*` annotations with reasons; dev render alone skips CKV_K8S_15 (IfNotPresent for locally imported images).
+
 ## API summary
 
 All non-probe endpoints require `X-Internal-Token`; user endpoints also take `X-User-Id`

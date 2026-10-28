@@ -1,0 +1,12 @@
+# Copy to /etc/rancher/k3s/registries.yaml on every K3s node, fill credentials
+# locally (never commit them), then: sudo systemctl restart k3s
+mirrors:
+  "registry.registry.svc.cluster.local:5000":
+    endpoint:
+      - "http://localhost:30500"
+configs:
+  "localhost:30500":
+    auth:
+      username: <REGISTRY_USER>
+      password: <REGISTRY_PASSWORD>
+    # Plain HTTP inside the node; put TLS in front for multi-node setups.

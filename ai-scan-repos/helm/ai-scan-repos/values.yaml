@@ -1,0 +1,91 @@
+# Default values. Secrets are NEVER set here: the chart only references existing Secret names
+# created by scripts/create-secrets.sh.
+
+image:
+  registry: ""            # e.g. registry.registry.svc:5000 or k3s-srv:30500
+  repositoryPrefix: ai-scan-repos
+  tag: "0.3.0"
+  pullPolicy: Always
+imagePullSecrets: []      # e.g. [{name: regcred}]
+
+secrets:
+  gateway: gateway-env              # GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_WEBHOOK_SECRET, INTERNAL_API_TOKEN, DATABASE_URL
+  reviewApi: review-api-env         # INTERNAL_API_TOKEN, AI_KEYS_ENCRYPTION_KEY, DATABASE_URL
+  scannerWorker: scanner-worker-env # INTERNAL_API_TOKEN (+ optional AI_PROVIDER/AI_MODEL/AI_BASE_URL/AI_API_KEY defaults)
+  postgres: postgres-credentials    # POSTGRES_PASSWORD
+
+publicUrl: https://ai-scan.local
+
+ingress:
+  enabled: true
+  className: traefik
+  host: ai-scan.local
+  tls:
+    enabled: false
+    secretName: ai-scan-tls          # create with kubectl create secret tls / cert-manager
+  annotations: {}
+
+frontend:
+  replicas: 1
+  image: frontend
+  resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 128Mi}}
+
+gateway:
+  replicas: 1
+  image: gateway
+  cookieSecure: true
+  allowedGithubLogins: ""
+  adminGithubLogins: ""
+  webhookAutoReview: false
+  resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
+
+reviewApi:
+  replicas: 1               # watchdog runs in-process: keep 1 replica
+  image: review-api
+  heartbeatTimeoutSeconds: 900
+  maxAttempts: 5
+  resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: "1", memory: 512Mi}}
+
+scannerWorker:
+  image: scanner-worker
+  # On-prem AI reachable from Jobs (e.g. Tailscale / LAN). Used by NetworkPolicy egress.
+  aiEgress:
+    cidrs: ["100.64.0.0/10"]   # Tailscale CGNAT range
+    ports: [1234, 11434, 8000]  # LM Studio, Ollama, vLLM
+
+postgres:
+  image: docker.io/library/postgres:16-alpine
+  database: aiscan
+  user: aiscan
+  storage: 5Gi
+  storageClass: ""          # "" = cluster default (K3s: local-path)
+  resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+
+reports:
+  pvcName: ai-scan-reports
+  size: 5Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce # ReadWriteMany on multi-node (NFS/EFS/Longhorn RWX)
+  # Optionally create a StorageClass with noexec. Only works with provisioners that honor mountOptions
+  # (NFS, EFS CSI, Longhorn...). K3s local-path ignores mountOptions -> documented limitation.
+  noexecStorageClass:
+    create: false
+    name: ai-scan-reports-noexec
+    provisioner: nfs.csi.k8s.io
+    parameters: {}
+
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: kube-system   # K3s Traefik
+  monitoringNamespace: monitoring
+  # Kubernetes API endpoint for review-api (Job/Secret creation). K3s default: node IP:6443
+  apiServer:
+    cidrs: ["0.0.0.0/0"]
+    ports: [443, 6443]
+  # Public internet egress (GitHub, cloud AI) excludes private ranges
+  internetExcept: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+serviceMonitor:
+  enabled: false
+  labels: {release: kube-prometheus-stack}
+  interval: 30s

@@ -1,0 +1,53 @@
+{{- $v := .Values.gateway }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+    app: gateway
+spec:
+  type: ClusterIP
+  selector: {app: gateway}
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+    app: gateway
+  annotations:
+    checkov.io/skip1: CKV_K8S_35=12-factor app reads config from env; values come from a Secret created out-of-band
+    checkov.io/skip2: CKV_K8S_43=images pinned by immutable CI tag in the private registry (digest pinning is Phase 4/5)
+spec:
+  replicas: {{ $v.replicas }}
+  selector: {matchLabels: {app: gateway}}
+  template:
+    metadata:
+      labels: {app: gateway, ai-scan-repos/db-client: "true"}
+    spec:
+      serviceAccountName: gateway
+      automountServiceAccountToken: false
+      {{- include "ais.pullSecrets" . | nindent 6 }}
+      securityContext: {{- include "ais.podSecurity" (dict "uid" 10001) | nindent 8 }}
+      containers:
+        - name: gateway
+          image: {{ include "ais.image" (list . $v.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom: [{secretRef: {name: {{ .Values.secrets.gateway }}}}]
+          env:
+            - {name: REVIEW_API_URL, value: "http://review-api.{{ .Release.Namespace }}.svc:8000"}
+            - {name: PUBLIC_URL, value: {{ .Values.publicUrl | quote }}}
+            - {name: COOKIE_SECURE, value: {{ $v.cookieSecure | quote }}}
+            - {name: ALLOWED_GITHUB_LOGINS, value: {{ $v.allowedGithubLogins | quote }}}
+            - {name: ADMIN_GITHUB_LOGINS, value: {{ $v.adminGithubLogins | quote }}}
+            - {name: WEBHOOK_AUTO_REVIEW, value: {{ $v.webhookAutoReview | quote }}}
+          ports: [{name: http, containerPort: 8000}]
+          securityContext: {{- include "ais.containerSecurity" (dict "uid" 10001) | nindent 12 }}
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 10, periodSeconds: 20}
+          resources: {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]

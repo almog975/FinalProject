@@ -1,0 +1,47 @@
+{{- $v := .Values.frontend }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+    app: frontend
+spec:
+  type: ClusterIP   # exposed only through the Traefik Ingress
+  selector: {app: frontend}
+  ports: [{name: http, port: 80, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "ais.labels" . | nindent 4 }}
+    app: frontend
+  annotations:
+    checkov.io/skip1: CKV_K8S_40=nginx-unprivileged image uses fixed UID 101 (files owned by it)
+    checkov.io/skip2: CKV_K8S_43=images pinned by immutable CI tag in the private registry (digest pinning is Phase 4/5)
+spec:
+  replicas: {{ $v.replicas }}
+  selector: {matchLabels: {app: frontend}}
+  template:
+    metadata:
+      labels: {app: frontend}
+    spec:
+      serviceAccountName: frontend
+      automountServiceAccountToken: false
+      {{- include "ais.pullSecrets" . | nindent 6 }}
+      securityContext: {{- include "ais.podSecurity" (dict "uid" 101) | nindent 8 }}
+      containers:
+        - name: frontend
+          image: {{ include "ais.image" (list . $v.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - {name: GATEWAY_UPSTREAM, value: "gateway.{{ .Release.Namespace }}.svc:8000"}
+          ports: [{name: http, containerPort: 8080}]
+          securityContext: {{- include "ais.containerSecurity" (dict "uid" 101) | nindent 12 }}
+          readinessProbe: {httpGet: {path: /nginx-health, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /nginx-health, port: http}, initialDelaySeconds: 5, periodSeconds: 20}
+          resources: {{- toYaml $v.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]

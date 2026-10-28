@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ai-scan-repos
+description: AI Scan Repos — GitHub repo security review (frontend, gateway, review-api, scanner Jobs, Postgres)
+type: application
+version: 0.3.0
+appVersion: "0.3.0"
